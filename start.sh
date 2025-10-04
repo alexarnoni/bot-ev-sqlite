@@ -3,6 +3,12 @@
 # Bot EV+ - Script de inicialização
 # Uso: ./start.sh [feed_id]
 
+# Carrega variáveis do arquivo .env se existir
+if [ -f .env ]; then
+    echo "📄 Carregando configurações do .env..."
+    export $(grep -v '^#' .env | xargs)
+fi
+
 FEED_ID=${1:-"default"}
 FEEDS=${FEEDS:-"$FEED_ID"}
 
