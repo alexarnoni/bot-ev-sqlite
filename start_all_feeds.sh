@@ -45,7 +45,7 @@ for i in "${!FEEDS_TO_START[@]}"; do
     tmux new-session -d -s "listener_$feed" "export FEED_ID=$feed && python3 bot_listener.py"
     
     # Inicia o scheduler
-    tmux new-session -d -s "main_$feed" "export FEED_ID=$feed && python3 main_scheduler.py"
+    tmux new-session -d -s "main_$feed" "export FEED_ID=$feed && python3 -c 'import asyncio; from main_scheduler import main; asyncio.run(main())'"
     
     echo "  📱 Listener iniciado"
     echo "  ⏰ Scheduler iniciado"
