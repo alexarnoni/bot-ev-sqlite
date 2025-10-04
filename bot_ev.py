@@ -244,6 +244,13 @@ async def enviar_alerta(chat_id: int, aposta: Dict[str, Any]):
     """
     await alert_sender.enviar_alerta(chat_id, aposta)
 
+async def enviar_alertas_batch(chat_id: int, batch: list):
+    """
+    Envia múltiplos alertas em batch
+    """
+    for aposta, stake in batch:
+        await alert_sender.enviar_alerta(chat_id, aposta)
+
 def get_alert_sender() -> AlertSender:
     """
     Retorna instância do alert sender
