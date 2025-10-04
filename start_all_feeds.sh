@@ -1,47 +1,67 @@
 #!/bin/bash
 
-echo "========================================"
-echo "    BOT EV+ SQLITE - TODOS OS FEEDS"
-echo "========================================"
+echo "🚀 Bot EV+ - Iniciando Todos os Feeds"
+echo "====================================="
 echo
 
-# Lista de feeds
-FEEDS=("feed1" "feed2" "feed3" "feed4" "feed5")
+# Carrega variáveis do arquivo .env se existir
+if [ -f .env ]; then
+    export $(grep -v '^#' .env | xargs)
+fi
 
-# Cria diretórios se necessário
-for feed in "${FEEDS[@]}"; do
+# Lista de feeds para iniciar
+FEEDS_TO_START=("default" "feed1" "feed2" "feed3" "feed4" "feed_test")
+
+echo "📋 Iniciando feeds: ${FEEDS_TO_START[*]}"
+echo
+
+# Para qualquer feed que já esteja rodando
+echo "🛑 Parando feeds existentes..."
+for feed in "${FEEDS_TO_START[@]}"; do
+    tmux kill-session -t "listener_$feed" 2>/dev/null || true
+    tmux kill-session -t "main_$feed" 2>/dev/null || true
+done
+
+echo "⏳ Aguardando 5 segundos..."
+sleep 5
+
+# Inicia os feeds
+for i in "${!FEEDS_TO_START[@]}"; do
+    feed="${FEEDS_TO_START[$i]}"
+    
+    if [ $i -gt 0 ]; then
+        echo "⏳ Aguardando 10 segundos antes de iniciar $feed..."
+        sleep 10
+    fi
+    
+    echo "🚀 Iniciando feed: $feed"
+    
+    # Cria diretórios se necessário
     mkdir -p "data/$feed"
     mkdir -p "logs/$feed"
+    
+    # Inicia o listener
+    export FEED_ID=$feed
+    tmux new-session -d -s "listener_$feed" "export FEED_ID=$feed && python3 bot_listener.py"
+    
+    # Inicia o scheduler
+    tmux new-session -d -s "main_$feed" "export FEED_ID=$feed && python3 main_scheduler.py"
+    
+    echo "  📱 Listener iniciado"
+    echo "  ⏰ Scheduler iniciado"
+    echo "  ✅ Feed $feed iniciado"
+    echo
 done
 
-echo "Iniciando feeds: ${FEEDS[*]}"
+echo "🎉 Todos os feeds foram iniciados!"
 echo
-
-# Função para iniciar um feed
-start_feed() {
-    local feed=$1
-    echo "Iniciando feed: $feed"
-    
-    # Cria processo em background
-    nohup bash -c "export FEED_ID=$feed && python3 bot_listener.py" > "logs/$feed/bot.log" 2>&1 &
-    
-    # Salva PID
-    echo $! > "data/$feed/bot.pid"
-    
-    echo "Feed $feed iniciado (PID: $!)"
-    sleep 2
-}
-
-# Inicia todos os feeds
-for feed in "${FEEDS[@]}"; do
-    start_feed "$feed"
+echo "📊 Para monitorar:"
+echo "   ./monitor_feeds.sh"
+echo
+echo "📱 Para ver logs:"
+for feed in "${FEEDS_TO_START[@]}"; do
+    echo "   tmux attach -t listener_$feed"
 done
-
 echo
-echo "Todos os feeds iniciados!"
-echo
-echo "Para parar todos os feeds: ./stop_all_feeds.sh"
-echo "Para monitorar: ./monitor_feeds.sh"
-echo
-echo "PIDs salvos em: data/*/bot.pid"
-echo "Logs em: logs/*/bot.log"
+echo "🛑 Para parar todos:"
+echo "   ./stop_all_feeds.sh"
