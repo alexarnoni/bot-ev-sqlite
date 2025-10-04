@@ -26,6 +26,16 @@ def test_database():
     
     db = Database("test")
     
+    # Limpa dados de testes anteriores
+    with db.get_connection() as conn:
+        conn.execute("DELETE FROM alert_history WHERE chat_id = 123456789")
+        conn.execute("DELETE FROM alert_cache WHERE chat_id = 123456789")
+        conn.execute("DELETE FROM user_sports WHERE chat_id = 123456789")
+        conn.execute("DELETE FROM user_leagues WHERE chat_id = 123456789")
+        conn.execute("DELETE FROM user_bookmakers WHERE chat_id = 123456789")
+        conn.execute("DELETE FROM user_filters WHERE chat_id = 123456789")
+        conn.execute("DELETE FROM users WHERE chat_id = 123456789")
+    
     # Teste 1: Criação de usuário
     print("  [1] Teste 1: Criação de usuário")
     db.create_or_update_user(123456789, "João Silva", "joaosilva")
@@ -268,6 +278,17 @@ def test_integration():
     
     # 1. Cria usuário
     db = Database("test")
+    
+    # Limpa dados de testes anteriores
+    with db.get_connection() as conn:
+        conn.execute("DELETE FROM alert_history WHERE chat_id = 999999999")
+        conn.execute("DELETE FROM alert_cache WHERE chat_id = 999999999")
+        conn.execute("DELETE FROM user_sports WHERE chat_id = 999999999")
+        conn.execute("DELETE FROM user_leagues WHERE chat_id = 999999999")
+        conn.execute("DELETE FROM user_bookmakers WHERE chat_id = 999999999")
+        conn.execute("DELETE FROM user_filters WHERE chat_id = 999999999")
+        conn.execute("DELETE FROM users WHERE chat_id = 999999999")
+    
     db.create_or_update_user(999999999, "Test User", "testuser")
     
     # 2. Configura filtros
