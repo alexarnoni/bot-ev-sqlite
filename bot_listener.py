@@ -690,8 +690,8 @@ async def setup_finalizar_callback(update, context):
         ev_texto = f"{ev_min*100:.1f}%-{ev_max*100:.1f}%"
     else:
         ev_texto = f"{ev_min*100:.1f}%+"
-            
-            keyboard = [
+    
+    keyboard = [
         [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual_inline")],
         [InlineKeyboardButton("⚙️ Ajustar Configurações", callback_data="reconfigurar")],
         [InlineKeyboardButton("📊 Ver Filtros Completos", callback_data="ver_filtros_completos")],
@@ -745,8 +745,8 @@ async def exemplo_alerta_callback(update, context):
     """Mostra exemplo de um alerta"""
     query = update.callback_query
     await query.answer()
-            
-            keyboard = [
+    
+    keyboard = [
         [InlineKeyboardButton("🚀 Quero Receber Alertas Assim!", callback_data="setup_passo1")],
         [InlineKeyboardButton("🔙 Voltar", callback_data="start_inicial")],
     ]
@@ -1051,7 +1051,7 @@ async def processar_setup_ev_manual(update, context):
         return True
         
     except Exception:
-                await update.message.reply_text(
+        await update.message.reply_text(
             "❌ <b>Formato inválido!</b>\n\n"
             "📝 <b>Formatos aceitos:</b>\n"
             "• <code>0.05</code> → 5% ou mais\n"
@@ -1253,7 +1253,7 @@ async def admin_users_handler(update, context):
     
     if not filtros_por_chat:
         await update.message.reply_text("🔭 Nenhum usuário cadastrado.")
-            return
+        return
         
     msg = "👥 <b>Usuários Ativos:</b>\n\n"
     
