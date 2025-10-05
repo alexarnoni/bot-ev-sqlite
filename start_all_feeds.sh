@@ -40,12 +40,12 @@ for i in "${!FEEDS_TO_START[@]}"; do
     mkdir -p "data/$feed"
     mkdir -p "logs/$feed"
     
-    # Inicia o listener
+    # Inicia o listener com variáveis de ambiente
     export FEED_ID=$feed
-    tmux new-session -d -s "listener_$feed" "export FEED_ID=$feed && python3 bot_listener.py"
+    tmux new-session -d -s "listener_$feed" "source load_env.sh && export FEED_ID=$feed && python3 bot_listener.py"
     
-    # Inicia o scheduler
-    tmux new-session -d -s "main_$feed" "export FEED_ID=$feed && python3 -c 'import asyncio; from main_scheduler import main; asyncio.run(main())'"
+    # Inicia o scheduler com variáveis de ambiente
+    tmux new-session -d -s "main_$feed" "source load_env.sh && export FEED_ID=$feed && python3 -c 'import asyncio; from main_scheduler import main; asyncio.run(main())'"
     
     echo "  📱 Listener iniciado"
     echo "  ⏰ Scheduler iniciado"

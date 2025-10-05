@@ -28,7 +28,7 @@ sleep 5
 echo "🚀 Iniciando apenas os listeners..."
 for feed in default feed1 feed2 feed3 feed4 feed_test; do
     echo "📱 Iniciando listener: $feed"
-    tmux new-session -d -s "listener_$feed" "export FEED_ID=$feed && python3 bot_listener.py"
+    tmux new-session -d -s "listener_$feed" "source load_env.sh && export FEED_ID=$feed && python3 bot_listener.py"
     sleep 3
 done
 
@@ -40,7 +40,7 @@ sleep 15
 echo "⏰ Iniciando schedulers..."
 for feed in default feed1 feed2 feed3 feed4 feed_test; do
     echo "⏰ Iniciando scheduler: $feed"
-    tmux new-session -d -s "main_$feed" "export FEED_ID=$feed && python3 -c 'import asyncio; from main_scheduler import main; asyncio.run(main())'"
+    tmux new-session -d -s "main_$feed" "source load_env.sh && export FEED_ID=$feed && python3 -c 'import asyncio; from main_scheduler import main; asyncio.run(main())'"
     sleep 2
 done
 
