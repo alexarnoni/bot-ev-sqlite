@@ -230,7 +230,7 @@ def migrar_usuarios_legados():
     usuarios_migrados = 0
     
     for chat_id, filtros in filtros_por_chat.items():
-        if filtros and not usuario_configurado(filtros):
+        if filtros and not usuario_configurado(int(chat_id)):
             logging.info(f"🔄 Migrando usuário legado: {chat_id}")
             
             # Adicionar bookmaker padrão se não existir
@@ -326,7 +326,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         salvar_filtros()
     
     # ===== USUÁRIO JÁ CONFIGURADO =====
-    if usuario_configurado(filtros_usuario):
+    if usuario_configurado(int(chat_id)):
         return await start_usuario_configurado(update, context, filtros_usuario)
     
     # ===== USUÁRIO NOVO - SETUP OBRIGATÓRIO =====
@@ -504,13 +504,13 @@ async def start_usuario_novo_callback(query, context):
 
 async def start_usuario_novo(update, context):
     """Setup obrigatório para usuário novo"""
-    
+            
     keyboard = [
         [InlineKeyboardButton("🚀 Começar Configuração", callback_data="setup_passo1")],
         [InlineKeyboardButton("📘 Como Funciona?", callback_data="explicar_bot")],
         [InlineKeyboardButton("🎯 Ver Exemplo de Alerta", callback_data="exemplo_alerta")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
             
     msg = (
         "👋 <b>Bem-vindo ao Bot EV+ Profissional!</b>\n\n"
@@ -580,7 +580,7 @@ async def setup_passo2_callback(update, context):
         "👉 <b>Use valores decimais, onde 0.05 = 5%</b>"
     )
             
-    keyboard = [
+            keyboard = [
         [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo1")],
     ]
     
@@ -621,7 +621,7 @@ async def setup_regiao_callback(update, context):
     chat_id = str(query.message.chat_id)
     
     # Aplica filtro de região usando lógica existente
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
     filtros_usuario = filtros_por_chat.setdefault(chat_id, {})
     
     if regiao == "brasil":
@@ -701,7 +701,7 @@ async def setup_finalizar_callback(update, context):
     else:
         ev_texto = f"{ev_min*100:.1f}%+"
             
-    keyboard = [
+            keyboard = [
         [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual_inline")],
         [InlineKeyboardButton("⚙️ Ajustar Configurações", callback_data="reconfigurar")],
         [InlineKeyboardButton("📊 Ver Filtros Completos", callback_data="ver_filtros_completos")],
@@ -795,8 +795,8 @@ async def scan_manual_inline_callback(update, context):
     
     chat_id = str(query.message.chat_id)
     resultado = await scan_apostas()
-    
-    keyboard = [
+            
+            keyboard = [
         [InlineKeyboardButton("🔄 Novo Scan", callback_data="scan_manual_inline")],
         [InlineKeyboardButton("🏠 Menu Principal", callback_data="start_inicial")],
     ]
@@ -819,7 +819,7 @@ async def start_inicial_callback(update, context):
     if info_atualizada:
         salvar_filtros()
     
-    if usuario_configurado(filtros_usuario):
+    if usuario_configurado(int(chat_id)):
         await start_usuario_configurado_callback(query, context, filtros_usuario)
     else:
         await start_usuario_novo_callback(query, context)
@@ -1179,7 +1179,7 @@ async def regiao_salvar_handler(update, context):
     chat_id = str(query.message.chat_id)
     
     selecao = context.user_data.get("regioes_selecao", {})
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
     
     ligas_final = []
     for regiao in selecao["selecionadas"]:
@@ -1262,7 +1262,7 @@ async def admin_users_handler(update, context):
     
     if not filtros_por_chat:
         await update.message.reply_text("🔭 Nenhum usuário cadastrado.")
-        return
+            return
         
     msg = "👥 <b>Usuários Ativos:</b>\n\n"
     
@@ -1413,7 +1413,7 @@ async def ligas_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     regiao = args[0].capitalize()
     esporte_pt = args[1].lower() if len(args) > 1 else "futebol"
     esporte_en = TRADUCAO_ESPORTE_EN.get(esporte_pt, "Football")
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
     ligas = catalogo.get(regiao, {}).get(esporte_en, [])
 
     if not ligas:
@@ -1434,8 +1434,8 @@ async def ligas_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def ligas_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+        query = update.callback_query
+        await query.answer()
     chat_id = str(query.message.chat.id)
     data = query.data
 
@@ -1521,7 +1521,7 @@ async def callback_bookmaker(update, context):
     query = update.callback_query
     await query.answer()
     chat_id = str(query.message.chat_id)
-    data = query.data
+        data = query.data
 
     if "bookmakers_lista" not in context.user_data:
         await query.edit_message_text("Sessão expirada. Use /bookmakers novamente.")
@@ -1542,7 +1542,7 @@ async def callback_bookmaker(update, context):
         selecionados = context.user_data.get("bookmaker_selecionados", set())
         if escolhido in selecionados:
             selecionados.remove(escolhido)
-        else:
+            else:
             selecionados.add(escolhido)
         context.user_data["bookmaker_selecionados"] = selecionados
         await enviar_pagina_bookmakers(update, context)
@@ -1616,7 +1616,7 @@ async def callback_data_dinamica(update, context):
     
     hoje = datetime.now().date()
     data_fim = hoje + timedelta(days=dias)
-    await query.edit_message_text(
+            await query.edit_message_text(
         f"✅ <b>Filtro dinâmico configurado!</b>\n\n"
         f"📅 Sempre os próximos {dias} dias\n"
         f"🔄 Hoje até {data_fim.strftime('%d/%m/%Y')}\n\n"
@@ -1654,8 +1654,8 @@ async def callback_data_remover(update, context):
     filtros_por_chat[chat_id].pop("filtro_dias", None)
     
     salvar_filtros()
-    
-    await query.edit_message_text(
+            
+            await query.edit_message_text(
         "🧹 <b>Filtro de data removido!</b>\n\n"
         "Agora você receberá alertas de jogos em qualquer data.",
         parse_mode="HTML"
@@ -1781,7 +1781,7 @@ async def callback_horario_preset(update, context):
         ("19:00", "23:00"): "Futebol BR"
     }.get((inicio, fim), "Personalizado")
     
-    await query.edit_message_text(
+                await query.edit_message_text(
         f"✅ <b>Filtro de horário configurado!</b>\n\n"
         f"🕐 <b>Período:</b> {nome_periodo}\n"
         f"⏰ <b>Horário:</b> {inicio} às {fim}\n\n"
@@ -1795,8 +1795,8 @@ async def callback_horario_custom(update, context):
     await query.answer()
     
     context.user_data["esperando_horario_custom"] = True
-    
-    await query.edit_message_text(
+            
+            await query.edit_message_text(
         "⚙️ <b>Horário Personalizado</b>\n\n"
         "Envie o horário no formato:\n"
         "<code>HH:MM HH:MM</code>\n\n"
@@ -2023,7 +2023,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filtros_usuario, _ = atualizar_info_usuario(chat_id, update.effective_user)
 
     data = query.data.lower()
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
 
     if data == "brasil":
         ligas_brasil_atuais = catalogo.get("Brasil", {}).get("Football", [])
@@ -2296,7 +2296,7 @@ async def explicar_esportes_comando_callback(update, context):
     await query.answer()
     
     # BUSCA ESPORTES DINAMICAMENTE DO CATÁLOGO DA API
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
     esportes_disponiveis = set()
     
     # Extrai todos os esportes únicos de todas as regiões
@@ -2413,7 +2413,7 @@ async def set_brasil(update, context):
     chat_id = str(update.effective_chat.id)
     filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
 
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
     ligas_brasil_atuais = catalogo.get("Brasil", {}).get("Football", [])
     filtros_por_chat[chat_id]["ligas"] = ligas_brasil_atuais
 
@@ -2424,7 +2424,7 @@ async def set_americasul(update, context):
     chat_id = str(update.effective_chat.id)
     filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
 
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
     ligas_america_sul_atuais = catalogo.get("América do Sul", {}).get("Football", [])
     filtros_por_chat[chat_id]["ligas"] = ligas_america_sul_atuais
 
@@ -2435,7 +2435,7 @@ async def set_europa(update, context):
     chat_id = str(update.effective_chat.id)
     filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
 
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
     ligas_europa_atuais = catalogo.get("Europa", {}).get("Football", [])
     filtros_por_chat[chat_id]["ligas"] = ligas_europa_atuais
 
@@ -2446,7 +2446,7 @@ async def set_escandinavo(update, context):
     chat_id = str(update.effective_chat.id)
     filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
 
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
     ligas_escandinavo_atuais = []
     for regiao in ["Suécia", "Noruega", "Finlândia", "Dinamarca", "Islândia"]:
         ligas_escandinavo_atuais += catalogo.get(regiao, {}).get("Football", [])
@@ -2459,7 +2459,7 @@ async def set_norte_centro(update, context):
     chat_id = str(update.effective_chat.id)
     filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
 
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
     ligas_norte_centro_atuais = catalogo.get("Norte/Centro", {}).get("Football", [])
     filtros_por_chat[chat_id]["ligas"] = ligas_norte_centro_atuais
 
@@ -2470,7 +2470,7 @@ async def set_asia(update, context):
     chat_id = str(update.effective_chat.id)
     filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
 
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
     ligas_asia_atuais = catalogo.get("Ásia/Oceania", {}).get("Football", [])
     filtros_por_chat[chat_id]["ligas"] = ligas_asia_atuais
 
@@ -2481,7 +2481,7 @@ async def set_feminino(update, context):
     chat_id = str(update.effective_chat.id)
     filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
 
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
     ligas_femininas_atuais = []
     # Futebol feminino em todas as regiões
     for regiao in catalogo:
@@ -2497,7 +2497,7 @@ async def set_internacionais(update, context):
     chat_id = str(update.effective_chat.id)
     filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
 
-    catalogo = await carregar_catalogo_ligas()
+    catalogo = carregar_catalogo_ligas()
     ligas_internacionais_atuais = catalogo.get("Internacionais", {}).get("Football", [])
     filtros_por_chat[chat_id]["ligas"] = ligas_internacionais_atuais
 
