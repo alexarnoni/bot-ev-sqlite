@@ -784,7 +784,7 @@ async def scan_manual_inline_callback(update, context):
     await query.edit_message_text("🔎 <b>Iniciando scan manual...</b>\n\n⏳ Analisando mercado...", parse_mode="HTML")
     
     chat_id = str(query.message.chat_id)
-    resultado = await scan_apostas(chat_id)
+    resultado = await scan_apostas()
     
     keyboard = [
         [InlineKeyboardButton("🔄 Novo Scan", callback_data="scan_manual_inline")],
@@ -2561,7 +2561,7 @@ async def ajuda(update, context):
 async def scan_handler(update, context):
     await update.message.reply_text("🔎 Iniciando scan manual...")
     chat_id = str(update.effective_chat.id)
-    resultado = await scan_apostas(chat_id)
+    resultado = await scan_apostas()
     await update.message.reply_text(f"✅ Scan finalizado!\n{resultado}")
 
 async def stats_handler(update, context):
