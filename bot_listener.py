@@ -1352,7 +1352,7 @@ async def admin_broadcast_handler(update, context):
         return
     
     if not context.args:
-            await update.message.reply_text(
+        await update.message.reply_text(
             "📢 <b>Uso:</b> <code>/admin_broadcast sua mensagem aqui</code>\n\n"
             "Esta mensagem será enviada para todos os usuários ativos.",
             parse_mode="HTML"
