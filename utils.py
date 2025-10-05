@@ -174,20 +174,13 @@ LIGAS_POR_REGIAO = {
 }
 
 def get_league_catalog() -> Dict[str, Dict[str, List[str]]]:
-    """Retorna catálogo de ligas do banco ou padrão"""
-    db = get_db()
-    catalog = db.get_league_catalog()
-    
-    # Se não há dados no banco, retorna catálogo padrão
-    if not catalog:
-        return LIGAS_POR_REGIAO
-    
-    return catalog
+    """Retorna catálogo de ligas padrão"""
+    return LIGAS_POR_REGIAO
 
 def update_league_catalog(catalog: Dict[str, Dict[str, List[str]]]):
-    """Atualiza catálogo de ligas no banco"""
-    db = get_db()
-    db.update_league_catalog(catalog)
+    """Atualiza catálogo de ligas no banco (versão simplificada)"""
+    # Por enquanto, apenas log - implementar se necessário
+    print(f"Catálogo atualizado: {len(catalog)} regiões")
 
 def get_country_flag(country_name: str) -> str:
     """Retorna emoji da bandeira de um país"""

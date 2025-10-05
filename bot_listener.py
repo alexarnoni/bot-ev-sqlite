@@ -376,7 +376,7 @@ async def start_usuario_configurado(update, context, filtros_usuario):
         status_horario = "24h"
     
     # Menu contextual
-        keyboard = [
+    keyboard = [
         [InlineKeyboardButton("⚙️ Alterar Configurações", callback_data="reconfigurar")],
         [InlineKeyboardButton("📊 Ver Filtros Detalhados", callback_data="ver_filtros_completos")],
         [InlineKeyboardButton("🔍 Scan Manual Agora", callback_data="scan_manual_inline")],
@@ -951,7 +951,7 @@ async def ver_filtros_inline_detalhado(update, context, chat_id):
             msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
         )
     else:
-            await update.message.reply_text(
+        await update.message.reply_text(
             msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
         )
 
@@ -1060,7 +1060,7 @@ async def processar_setup_ev_manual(update, context):
         return True
         
     except Exception:
-                await update.message.reply_text(
+        await update.message.reply_text(
             "❌ <b>Formato inválido!</b>\n\n"
             "📝 <b>Formatos aceitos:</b>\n"
             "• <code>0.05</code> → 5% ou mais\n"
@@ -1361,12 +1361,12 @@ async def admin_broadcast_handler(update, context):
         return
     
     if not context.args:
-            await update.message.reply_text(
+        await update.message.reply_text(
             "📢 <b>Uso:</b> <code>/admin_broadcast sua mensagem aqui</code>\n\n"
             "Esta mensagem será enviada para todos os usuários ativos.",
             parse_mode="HTML"
         )
-    return
+        return
     
     mensagem = " ".join(context.args)
     enviados = 0
@@ -1555,17 +1555,16 @@ async def callback_bookmaker(update, context):
         # Verificar se está em modo setup
         if context.user_data.get("setup_mode"):
             context.user_data.pop("setup_mode", None)
-        await query.edit_message_text(
+            await query.edit_message_text(
                 f"✅ <b>Casas selecionadas:</b> {', '.join(selecionados)}\n\n"
                 "Continuando setup...",
                 parse_mode="HTML"
-        # Start of Selection
-        )
-        # Vai para próximo passo do setup
-        await setup_passo2_callback(update, context)
-    else:
-        # Modo normal
-        await query.edit_message_text(f"✅ Casas de aposta salvas: {', '.join(selecionados)}")
+            )
+            # Vai para próximo passo do setup
+            await setup_passo2_callback(update, context)
+        else:
+            # Modo normal
+            await query.edit_message_text(f"✅ Casas de aposta salvas: {', '.join(selecionados)}")
 
 # ===== FILTROS DE DATA =====
 async def filtros_data_handler(update, context):
@@ -1866,7 +1865,7 @@ async def processar_horario_custom(update, context):
         return True
         
     except Exception:
-                await update.message.reply_text(
+        await update.message.reply_text(
             "❌ <b>Formato inválido!</b>\n\n"
             "Use o formato: <code>HH:MM HH:MM</code>\n\n"
             "📝 <b>Exemplo correto:</b>\n"
