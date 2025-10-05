@@ -42,7 +42,7 @@ for i in "${!FEEDS_TO_START[@]}"; do
     
     # Inicia o listener
     export FEED_ID=$feed
-    tmux new-session -d -s "listener_$feed" "export FEED_ID=$feed && python3 bot_listener_sqlite.py"
+    tmux new-session -d -s "listener_$feed" "export FEED_ID=$feed && python3 bot_listener.py"
     
     # Inicia o scheduler
     tmux new-session -d -s "main_$feed" "export FEED_ID=$feed && python3 -c 'import asyncio; from main_scheduler import main; asyncio.run(main())'"
