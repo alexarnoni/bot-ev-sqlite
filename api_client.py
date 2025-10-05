@@ -12,9 +12,12 @@ from bot_core import calcular_ev
 class OddsAPI:
     def __init__(self):
         self.api_key = ODDS_API_KEY
+        if not self.api_key:
+            raise ValueError("❌ ODDS_API_KEY não configurada no .env")
         self.base_url = ODDS_API_BASE
         self.rate_limit = RATE_LIMIT_REQUESTS_PER_HOUR
         self.db = get_db()
+        print(f"✅ API Client inicializada (key: {self.api_key[:8]}...)")
     
     def _check_rate_limit(self) -> bool:
         """Verifica se pode fazer requisição sem exceder rate limit"""
@@ -36,39 +39,38 @@ class OddsAPI:
         """Parse de um evento da API para formato interno"""
         try:
             bookmaker = bet.get('bookmaker', '')
-            odds = bet.get('bookmakerOdds', {})
+            market = bet.get('market', {})
+            bookmaker_odds = bet.get('bookmakerOdds', {})
             bet_side = bet.get('betSide', '').lower()
 
-            if bet_side not in odds:
-                return None
-
-            odd_bet = self._parse_float(odds.get(bet_side))
+            # Odd do lado da aposta
+            odd_bet = self._parse_float(bookmaker_odds.get(bet_side))
             if not odd_bet or odd_bet < 1.50:
                 return None
 
-            # API já retorna EV calculado
+            # EV já vem calculado: 101.84 = 1.84% EV
+            # Converter: 101.84 -> 0.0184
             expected_value_raw = bet.get('expectedValue', 0)
-            # Converte para formato interno: 100.84 → 0.0084
-            ev = calcular_ev(bet)
+            ev = (expected_value_raw - 100) / 100
 
             return {
-                "home": bet['event'].get('home', ''),
-                "away": bet['event'].get('away', ''),
-                "league": bet['event'].get('league', ''),
-                "commence_time": bet['event'].get('date', ''),
+                "home": f"Event {bet.get('eventId', '')}",
+                "away": "",
+                "league": "Unknown",
+                "commence_time": bet.get('expectedValueUpdatedAt', ''),
                 "id": bet.get('eventId', bet.get('id', '')),
-                "sport": bet['event'].get('sport', ''),
-                "market_type": bet.get('market', {}).get('name', bet.get('market_type', '')),
-                "market_name": bet.get('market', {}).get('name', ''),
-                "bet_side": bet.get('betSide', ''),
+                "sport": "Unknown",
+                "market_type": market.get('name', ''),
+                "market_name": market.get('name', ''),
+                "bet_side": bet_side,
                 "bet365_odds": odd_bet,
-                "odds_home": self._parse_float(odds.get('home', 0.0)) or 0.0,
-                "odds_away": self._parse_float(odds.get('away', 0.0)) or 0.0,
-                "odds_draw": self._parse_float(odds.get('draw', 0.0)) or 0.0,
-                "hdp": bet.get('market', {}).get('hdp'),
-                "total": bet.get('market', {}).get('total'),
-                "ev": ev,  # JÁ CONVERTIDO
-                "event_url": odds.get('href', ''),
+                "odds_home": self._parse_float(market.get('home', 0)) or 0.0,
+                "odds_away": self._parse_float(market.get('away', 0)) or 0.0,
+                "odds_draw": self._parse_float(market.get('draw', 0)) or 0.0,
+                "hdp": market.get('hdp'),
+                "total": market.get('total'),
+                "ev": ev,
+                "event_url": bookmaker_odds.get('href', ''),
                 "bookmaker": bookmaker
             }
         except Exception as e:
@@ -135,11 +137,6 @@ class OddsAPI:
                         self.db.set_api_status(False, f"Erro HTTP {response.status}", error_text)
                         return []
         
-        except Exception as e:
-            print(f"Erro na requisição: {e}")
-            self.db.set_api_status(False, "Erro de conexão", str(e))
-            return []
-            
         except Exception as e:
             print(f"Erro na requisição: {e}")
             import traceback
