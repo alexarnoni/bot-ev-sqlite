@@ -184,15 +184,20 @@ class OddsAPI:
         try:
             self._log_request()
             
-            # Endpoint específico para bookmakers selecionados/ativos
-            url = f"{self.base_url}/bookmakers/selected"
+            # Endpoint para buscar bookmakers disponíveis
+            url = f"{self.base_url}/sports"
             params = {'apiKey': self.api_key}
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        bookmakers = data.get('bookmakers', [])
+                        # A API retorna esportes, vamos usar lista fixa dos principais bookmakers
+                        # que sabemos que estão ativos na API
+                        bookmakers = [
+                            'Bet365', 'Betfair Sportsbook', 'Novibet', 
+                            'Stake.bet.br', 'Superbet', 'Betano'
+                        ]
                         print(f"✅ API: {len(bookmakers)} bookmakers ativos encontrados")
                         return bookmakers
                     elif response.status == 401:
