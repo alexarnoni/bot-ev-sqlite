@@ -376,14 +376,14 @@ async def start_usuario_configurado(update, context, filtros_usuario):
         status_horario = "24h"
     
     # Menu contextual
-    keyboard = [
+        keyboard = [
         [InlineKeyboardButton("⚙️ Alterar Configurações", callback_data="reconfigurar")],
         [InlineKeyboardButton("📊 Ver Filtros Detalhados", callback_data="ver_filtros_completos")],
         [InlineKeyboardButton("🔍 Scan Manual Agora", callback_data="scan_manual_inline")],
         [InlineKeyboardButton("📈 Histórico de Alertas", callback_data="ver_historico")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
     # EV texto - Mínimo ou faixa
     if ev_max and ev_max < 99:
         ev_texto = f"{ev_min*100:.1f}%-{ev_max*100:.1f}%"
@@ -505,12 +505,12 @@ async def start_usuario_novo_callback(query, context):
 async def start_usuario_novo(update, context):
     """Setup obrigatório para usuário novo"""
             
-    keyboard = [
+            keyboard = [
         [InlineKeyboardButton("🚀 Começar Configuração", callback_data="setup_passo1")],
         [InlineKeyboardButton("📘 Como Funciona?", callback_data="explicar_bot")],
         [InlineKeyboardButton("🎯 Ver Exemplo de Alerta", callback_data="exemplo_alerta")],
             ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+            reply_markup = InlineKeyboardMarkup(keyboard)
             
     msg = (
         "👋 <b>Bem-vindo ao Bot EV+ Profissional!</b>\n\n"
@@ -580,7 +580,7 @@ async def setup_passo2_callback(update, context):
         "👉 <b>Use valores decimais, onde 0.05 = 5%</b>"
     )
             
-    keyboard = [
+            keyboard = [
         [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo1")],
     ]
     
@@ -701,7 +701,7 @@ async def setup_finalizar_callback(update, context):
     else:
         ev_texto = f"{ev_min*100:.1f}%+"
             
-    keyboard = [
+            keyboard = [
         [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual_inline")],
         [InlineKeyboardButton("⚙️ Ajustar Configurações", callback_data="reconfigurar")],
         [InlineKeyboardButton("📊 Ver Filtros Completos", callback_data="ver_filtros_completos")],
@@ -951,7 +951,7 @@ async def ver_filtros_inline_detalhado(update, context, chat_id):
             msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
         )
     else:
-        await update.message.reply_text(
+                await update.message.reply_text(
             msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
         )
 
@@ -959,8 +959,8 @@ async def setup_ligas_custom_callback(update, context):
     """Ligas personalizadas no setup"""
     query = update.callback_query
     await query.answer()
-    
-    keyboard = [
+            
+            keyboard = [
         [InlineKeyboardButton("⚽ Usar /ligas para personalizar", callback_data="explicar_ligas_custom")],
         [InlineKeyboardButton("⏭️ Pular por agora", callback_data="setup_passo4")],
         [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo3")],
@@ -1060,7 +1060,7 @@ async def processar_setup_ev_manual(update, context):
         return True
         
     except Exception:
-        await update.message.reply_text(
+            await update.message.reply_text(
             "❌ <b>Formato inválido!</b>\n\n"
             "📋 <b>Formatos aceitos:</b>\n"
             "• <code>0.05</code> → 5% ou mais\n"
@@ -1093,6 +1093,43 @@ async def enviar_setup_passo3_message(update, context):
     
     await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
+async def enviar_setup_finalizacao_message(update, context):
+    """Finalização do setup enviada como mensagem normal"""
+    chat_id = str(update.effective_chat.id)
+    filtros = filtros_por_chat.get(chat_id, {})
+    
+    bookmakers = filtros.get("bookmakers", ["Bet365"])
+    ev_min = filtros.get("ev_faixa_min", 0.05)
+    ev_max = filtros.get("ev_faixa_max")
+    ligas = filtros.get("ligas")
+    horario_inicio = filtros.get("horario_inicio")
+    horario_fim = filtros.get("horario_fim")
+    
+    if ev_max and ev_max < 99:
+        ev_texto = f"{ev_min*100:.1f}%-{ev_max*100:.1f}%"
+    else:
+        ev_texto = f"{ev_min*100:.1f}%+"
+    
+    keyboard = [
+        [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual_inline")],
+        [InlineKeyboardButton("⚙️ Ajustar Configurações", callback_data="reconfigurar")],
+        [InlineKeyboardButton("📊 Ver Filtros Completos", callback_data="ver_filtros_completos")],
+    ]
+    
+    msg = (
+        "🎉 <b>Configuração Concluída!</b>\n\n"
+        "✅ <b>Bot ativo e monitorando:</b>\n"
+        f"🏠 <b>Casas:</b> {', '.join(bookmakers[:2])}\n"
+        f"📈 <b>EV:</b> {ev_texto}\n"
+        f"🌍 <b>Ligas:</b> {'Personalizadas' if ligas else 'Todas'}\n"
+        f"🕐 <b>Horário:</b> {f'{horario_inicio}-{horario_fim}' if horario_inicio else '24h'}\n\n"
+        "📢 <b>A partir de agora você receberá alertas automáticos!</b>\n\n"
+        "📡 <i>Monitoramento ativo a cada 5 minutos</i>\n"
+        "💡 <i>Use /start para gerenciar suas configurações</i>"
+    )
+    
+    await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
 async def processar_setup_horario_manual(update, context):
     """Processa horário manual durante setup"""
     try:
@@ -1113,14 +1150,14 @@ async def processar_setup_horario_manual(update, context):
         
         context.user_data["setup_esperando_horario"] = False
         
-        await update.message.reply_text(
+                await update.message.reply_text(
             f"✅ <b>Horário configurado: {inicio} às {fim}</b>\n\n"
             "Finalizando setup...",
             parse_mode="HTML"
         )
         
         # Vai para finalização
-        await setup_finalizar_callback(update, context)
+        await enviar_setup_finalizacao_message(update, context)
         return True
         
     except:
@@ -1285,7 +1322,7 @@ async def admin_users_handler(update, context):
     
     if not filtros_por_chat:
         await update.message.reply_text("🔭 Nenhum usuário cadastrado.")
-        return
+            return
         
     msg = "👥 <b>Usuários Ativos:</b>\n\n"
     
@@ -1384,7 +1421,7 @@ async def admin_broadcast_handler(update, context):
         return
     
     if not context.args:
-        await update.message.reply_text(
+            await update.message.reply_text(
             "📢 <b>Uso:</b> <code>/admin_broadcast sua mensagem aqui</code>\n\n"
             "Esta mensagem será enviada para todos os usuários ativos.",
             parse_mode="HTML"
@@ -1457,8 +1494,8 @@ async def ligas_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def ligas_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+        query = update.callback_query
+        await query.answer()
     chat_id = str(query.message.chat.id)
     data = query.data
 
@@ -1544,7 +1581,7 @@ async def callback_bookmaker(update, context):
     query = update.callback_query
     await query.answer()
     chat_id = str(query.message.chat_id)
-    data = query.data
+        data = query.data
 
     if "bookmakers_lista" not in context.user_data:
         await query.edit_message_text("Sessão expirada. Use /bookmakers novamente.")
@@ -1565,7 +1602,7 @@ async def callback_bookmaker(update, context):
         selecionados = context.user_data.get("bookmaker_selecionados", set())
         if escolhido in selecionados:
             selecionados.remove(escolhido)
-        else:
+            else:
             selecionados.add(escolhido)
         context.user_data["bookmaker_selecionados"] = selecionados
         await enviar_pagina_bookmakers(update, context)
@@ -1578,7 +1615,7 @@ async def callback_bookmaker(update, context):
         # Verificar se está em modo setup
         if context.user_data.get("setup_mode"):
             context.user_data.pop("setup_mode", None)
-            await query.edit_message_text(
+        await query.edit_message_text(
                 f"✅ <b>Casas selecionadas:</b> {', '.join(selecionados)}\n\n"
                 "Continuando setup...",
                 parse_mode="HTML"
@@ -1638,7 +1675,7 @@ async def callback_data_dinamica(update, context):
     
     hoje = datetime.now().date()
     data_fim = hoje + timedelta(days=dias)
-    await query.edit_message_text(
+            await query.edit_message_text(
         f"✅ <b>Filtro dinâmico configurado!</b>\n\n"
         f"📅 Sempre os próximos {dias} dias\n"
         f"🔄 Hoje até {data_fim.strftime('%d/%m/%Y')}\n\n"
@@ -1677,7 +1714,7 @@ async def callback_data_remover(update, context):
     
     salvar_filtros()
             
-    await query.edit_message_text(
+            await query.edit_message_text(
         "🧹 <b>Filtro de data removido!</b>\n\n"
         "Agora você receberá alertas de jogos em qualquer data.",
         parse_mode="HTML"
@@ -1803,7 +1840,7 @@ async def callback_horario_preset(update, context):
         ("19:00", "23:00"): "Futebol BR"
     }.get((inicio, fim), "Personalizado")
     
-    await query.edit_message_text(
+                await query.edit_message_text(
         f"✅ <b>Filtro de horário configurado!</b>\n\n"
         f"🕐 <b>Período:</b> {nome_periodo}\n"
         f"⏰ <b>Horário:</b> {inicio} às {fim}\n\n"
@@ -1818,7 +1855,7 @@ async def callback_horario_custom(update, context):
     
     context.user_data["esperando_horario_custom"] = True
             
-    await query.edit_message_text(
+            await query.edit_message_text(
         "⚙️ <b>Horário Personalizado</b>\n\n"
         "Envie o horário no formato:\n"
         "<code>HH:MM HH:MM</code>\n\n"
@@ -1888,7 +1925,7 @@ async def processar_horario_custom(update, context):
         return True
         
     except Exception:
-        await update.message.reply_text(
+                await update.message.reply_text(
             "❌ <b>Formato inválido!</b>\n\n"
             "Use o formato: <code>HH:MM HH:MM</code>\n\n"
             "📝 <b>Exemplo correto:</b>\n"
