@@ -495,13 +495,13 @@ async def start_usuario_novo_callback(query, context):
 async def start_usuario_novo(update, context):
     """Setup obrigatório para usuário novo"""
             
-            keyboard = [
+    keyboard = [
         [InlineKeyboardButton("🚀 Começar Configuração", callback_data="setup_passo1")],
         [InlineKeyboardButton("📘 Como Funciona?", callback_data="explicar_bot")],
         [InlineKeyboardButton("🎯 Ver Exemplo de Alerta", callback_data="exemplo_alerta")],
             ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     msg = (
         "👋 <b>Bem-vindo ao Bot EV+ Profissional!</b>\n\n"
         "🎯 <b>O que fazemos:</b>\n"
@@ -569,8 +569,8 @@ async def setup_passo2_callback(update, context):
         "• <b>Sem limite superior:</b> basta mandar um valor (ex: <code>0.03</code>)\n\n"
         "👉 <b>Use valores decimais, onde 0.05 = 5%</b>"
     )
-            
-            keyboard = [
+    
+    keyboard = [
         [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo1")],
     ]
     
