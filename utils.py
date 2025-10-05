@@ -295,33 +295,9 @@ def is_valid_region(region: str) -> bool:
     """Verifica se uma região é válida"""
     return region in get_regions_list()
 
-async def carregar_catalogo_ligas() -> Dict[str, Any]:
-    """Carrega catálogo de ligas do banco de dados (versão async)"""
-    try:
-        from database import SQLiteConnectionPool, SQLiteConnectionConfig
-        import os
-        
-        db_config = SQLiteConnectionConfig(
-            database_path=os.path.join(os.getcwd(), "data", "bot.db"),
-            max_connections=10,
-            timeout=30.0
-        )
-        db_pool = SQLiteConnectionPool(db_config)
-        
-        async with db_pool.get_connection() as conn:
-            cursor = await conn.execute("SELECT * FROM league_catalog")
-            ligas = {}
-            for row in await cursor.fetchall():
-                ligas[row['league_name']] = {
-                    'sport': row['sport'],
-                    'region': row['region'],
-                    'country': row['country']
-                }
-            return ligas
-            
-    except Exception as e:
-        logger_geral.error(f"Erro ao carregar catálogo de ligas: {e}")
-        return {}
+def carregar_catalogo_ligas() -> Dict[str, Any]:
+    """Retorna catálogo de ligas estático (não precisa de banco)"""
+    return LIGAS_POR_REGIAO
 
 # Tradução de esportes para inglês (usado na API)
 TRADUCAO_ESPORTE_EN = {

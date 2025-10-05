@@ -18,38 +18,35 @@ db_config = SQLiteConnectionConfig(
 )
 db_pool = SQLiteConnectionPool(db_config)
 
-async def usuario_configurado(chat_id: int) -> bool:
+def usuario_configurado(chat_id: int) -> bool:
     """
     Verifica se o usuário está completamente configurado
     """
     try:
-        async with db_pool.get_connection() as conn:
-            # Verifica se tem filtros
-            cursor = await conn.execute("""
-                SELECT COUNT(*) as count FROM user_filters WHERE chat_id = ?
-            """, (chat_id,))
-            tem_filtros = (await cursor.fetchone())['count'] > 0
-            
-            # Verifica se tem ligas
-            cursor = await conn.execute("""
-                SELECT COUNT(*) as count FROM user_leagues WHERE chat_id = ?
-            """, (chat_id,))
-            tem_ligas = (await cursor.fetchone())['count'] > 0
-            
-            # Verifica se tem esportes
-            cursor = await conn.execute("""
-                SELECT COUNT(*) as count FROM user_sports WHERE chat_id = ?
-            """, (chat_id,))
-            tem_esportes = (await cursor.fetchone())['count'] > 0
-            
-            # Verifica se tem bookmakers
-            cursor = await conn.execute("""
-                SELECT COUNT(*) as count FROM user_bookmakers WHERE chat_id = ?
-            """, (chat_id,))
-            tem_bookmakers = (await cursor.fetchone())['count'] > 0
-            
-            # Usuário está configurado se tem todas as configurações
-            return tem_filtros and tem_ligas and tem_esportes and tem_bookmakers
+        import sqlite3
+        db_path = get_database_path()
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        
+        # Verifica se tem filtros básicos
+        cursor = conn.execute("""
+            SELECT filter_data FROM users WHERE chat_id = ?
+        """, (str(chat_id),))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row or not row['filter_data']:
+            return False
+        
+        import json
+        filtros = json.loads(row['filter_data'])
+        
+        # Verifica configurações mínimas
+        tem_bookmakers = bool(filtros.get("bookmakers"))
+        tem_ev_min = filtros.get("ev_faixa_min") is not None
+        
+        return tem_bookmakers and tem_ev_min
             
     except Exception as e:
         print(f"Erro ao verificar configuração do usuário {chat_id}: {e}")
