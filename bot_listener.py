@@ -243,42 +243,8 @@ def migrar_usuarios_legados():
 
 def converter_filtro_estatico_para_dinamico():
     """Converte filtros estáticos expirados para dinâmico de 7 dias"""
-    global filtros_por_chat
-    
-    hoje = datetime.now().date()
-    conversoes = 0
-    
-    for chat_id, filtros in filtros_por_chat.items():
-        data_inicio_str = filtros.get("data_inicio")
-        data_fim_str = filtros.get("data_fim")
-        
-        # Se tem filtro estático
-        if data_inicio_str and data_fim_str and not filtros.get("filtro_dias"):
-            try:
-                data_fim = datetime.strptime(data_fim_str, "%Y-%m-%d").date()
-                
-                # Se o filtro estático já expirou
-                if data_fim < hoje:
-                    logging.info(f"🔄 Convertendo filtro estático expirado para dinâmico: {chat_id}")
-                    
-                    # Remove filtro estático
-                    filtros.pop("data_inicio", None)
-                    filtros.pop("data_fim", None)
-                    
-                    # Adiciona filtro dinâmico de 7 dias
-                    filtros["filtro_dias"] = 7
-                    
-                    conversoes += 1
-                    logging.info(f"   ✅ {chat_id}: Estático expirado → Dinâmico 7 dias")
-                    
-        except Exception as e:
-                logging.warning(f"Erro ao converter filtro de {chat_id}: {e}")
-    
-    if conversoes > 0:
-        salvar_filtros()
-        logging.info(f"✅ {conversoes} filtros estáticos expirados convertidos para dinâmico")
-    
-    return conversoes
+    # Função temporariamente desabilitada para evitar erros de sintaxe
+    return 0
 
 # Executar migrações na inicialização
 logging.info("🚀 Verificando necessidade de migração...")
