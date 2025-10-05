@@ -9,6 +9,10 @@ from contextlib import contextmanager
 from typing import Optional, List, Dict, Set, Any
 from config import feed_path, FEED_ID
 
+class DatabaseError(Exception):
+    """Exceção personalizada para erros de banco de dados"""
+    pass
+
 class Database:
     def __init__(self, feed_id: str = None):
         if feed_id is None:
