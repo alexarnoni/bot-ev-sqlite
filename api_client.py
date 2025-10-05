@@ -76,26 +76,22 @@ class OddsAPI:
             return None
     
     async def get_value_bets(self, bookmakers: List[str]) -> List[Dict]:
-        """
-        Busca apostas com valor (EV+) para bookmakers específicos
-        """
+        """Busca apostas com valor (EV+) para bookmakers específicos"""
         if not self._check_rate_limit():
-            print("⚠️ Rate limit atingido, aguardando...")
+            print("Rate limit atingido, aguardando...")
             return []
+        
+        # Garantir que sempre tem pelo menos um bookmaker
+        if not bookmakers:
+            bookmakers = ['Bet365']  # Fallback padrão
         
         try:
             self._log_request()
             
-            # Converte lista de bookmakers para string da API
-            bookmakers_str = ','.join(bookmakers)
-            
-            url = f"{self.base_url}/sports/all/odds"
+            url = f"{self.base_url}/value-bets"
             params = {
                 'apiKey': self.api_key,
-                'regions': 'us',
-                'markets': 'h2h,spreads,totals',
-                'bookmakers': bookmakers_str,
-                'oddsFormat': 'decimal'
+                'bookmaker': ','.join(bookmakers)  # ✅ OBRIGATÓRIO
             }
             
             async with aiohttp.ClientSession() as session:
@@ -104,52 +100,66 @@ class OddsAPI:
                         data = await response.json()
                         eventos = []
                         
-                        for bet in data:
+                        # A API pode retornar lista direta ou {"data": [...]}
+                        items = data if isinstance(data, list) else data.get('data', [])
+                        
+                        for bet in items:
                             evento = self.__parse_evento(bet)
                             if evento:
                                 eventos.append(evento)
                         
-                        print(f"✅ API: {len(eventos)} eventos encontrados para {len(bookmakers)} bookmakers")
+                        print(f"API: {len(eventos)} eventos encontrados")
+                        self.db.set_api_status(True, "OK", f"{len(eventos)} eventos")
                         return eventos
                     
                     elif response.status == 401:
-                        print("❌ API Key inválida")
-                        self.db.set_api_status(False, "API Key inválida", f"Status: {response.status}")
+                        error_text = await response.text()
+                        print(f"API Key inválida: {error_text}")
+                        self.db.set_api_status(False, "API Key inválida", error_text)
+                        return []
+                    
+                    elif response.status == 400:
+                        error_text = await response.text()
+                        print(f"Bad Request: {error_text}")
+                        self.db.set_api_status(False, "Bad Request", error_text)
                         return []
                     
                     elif response.status == 429:
-                        print("❌ Rate limit excedido")
-                        self.db.set_api_status(False, "Rate limit excedido", f"Status: {response.status}")
+                        print("Rate limit excedido")
+                        self.db.set_api_status(False, "Rate limit excedido", "429")
                         return []
                     
                     else:
-                        print(f"❌ Erro na API: {response.status}")
-                        self.db.set_api_status(False, f"Erro HTTP {response.status}", await response.text())
+                        error_text = await response.text()
+                        print(f"Erro {response.status}: {error_text}")
+                        self.db.set_api_status(False, f"Erro HTTP {response.status}", error_text)
                         return []
         
         except Exception as e:
-            print(f"❌ Erro na requisição: {e}")
+            print(f"Erro na requisição: {e}")
             self.db.set_api_status(False, "Erro de conexão", str(e))
             return []
-    
+            
+        except Exception as e:
+            print(f"Erro na requisição: {e}")
+            import traceback
+            traceback.print_exc()
+            self.db.set_api_status(False, "Erro de conexão", str(e))
+            return []
+        
     async def get_eventos_geral(self, bookmaker: str) -> List[Dict]:
-        """
-        Busca eventos gerais para um bookmaker específico
-        """
+        """Busca eventos gerais para um bookmaker específico"""
         if not self._check_rate_limit():
-            print("⚠️ Rate limit atingido, aguardando...")
+            print("Rate limit atingido, aguardando...")
             return []
         
         try:
             self._log_request()
             
-            url = f"{self.base_url}/sports/all/odds"
+            url = f"{self.base_url}/value-bets"
             params = {
                 'apiKey': self.api_key,
-                'regions': 'us',
-                'markets': 'h2h,spreads,totals',
-                'bookmakers': bookmaker,
-                'oddsFormat': 'decimal'
+                'bookmaker': bookmaker  # ✅ OBRIGATÓRIO
             }
             
             async with aiohttp.ClientSession() as session:
@@ -158,22 +168,24 @@ class OddsAPI:
                         data = await response.json()
                         eventos = []
                         
-                        for bet in data:
+                        items = data if isinstance(data, list) else data.get('data', [])
+                        
+                        for bet in items:
                             evento = self.__parse_evento(bet)
                             if evento:
                                 eventos.append(evento)
                         
-                        print(f"✅ API: {len(eventos)} eventos para {bookmaker}")
+                        print(f"API: {len(eventos)} eventos para {bookmaker}")
                         return eventos
-                    
                     else:
-                        print(f"❌ Erro na API para {bookmaker}: {response.status}")
+                        error_text = await response.text()
+                        print(f"Erro {response.status}: {error_text}")
                         return []
         
         except Exception as e:
-            print(f"❌ Erro na requisição para {bookmaker}: {e}")
+            print(f"Erro: {e}")
             return []
-    
+        
     async def get_bookmakers(self) -> List[str]:
         """
         Busca lista de bookmakers ativos que a API está fornecendo dados

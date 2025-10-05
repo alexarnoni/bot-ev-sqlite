@@ -25,7 +25,7 @@ FEED_TOKENS = {
 
 # API Odds
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
-ODDS_API_BASE = "https://api.the-odds-api.com/v4"
+ODDS_API_BASE = "https://api.odds-api.io/v3"
 
 # Paths base
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
