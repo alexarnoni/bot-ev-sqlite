@@ -381,9 +381,9 @@ async def start_usuario_configurado(update, context, filtros_usuario):
         [InlineKeyboardButton("📊 Ver Filtros Detalhados", callback_data="ver_filtros_completos")],
         [InlineKeyboardButton("🔍 Scan Manual Agora", callback_data="scan_manual_inline")],
         [InlineKeyboardButton("📈 Histórico de Alertas", callback_data="ver_historico")],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     # EV texto - Mínimo ou faixa
     if ev_max and ev_max < 99:
         ev_texto = f"{ev_min*100:.1f}%-{ev_max*100:.1f}%"
@@ -510,7 +510,7 @@ async def start_usuario_novo(update, context):
         [InlineKeyboardButton("📘 Como Funciona?", callback_data="explicar_bot")],
         [InlineKeyboardButton("🎯 Ver Exemplo de Alerta", callback_data="exemplo_alerta")],
             ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = InlineKeyboardMarkup(keyboard)
             
     msg = (
         "👋 <b>Bem-vindo ao Bot EV+ Profissional!</b>\n\n"
@@ -580,7 +580,7 @@ async def setup_passo2_callback(update, context):
         "👉 <b>Use valores decimais, onde 0.05 = 5%</b>"
     )
             
-            keyboard = [
+    keyboard = [
         [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo1")],
     ]
     
@@ -701,7 +701,7 @@ async def setup_finalizar_callback(update, context):
     else:
         ev_texto = f"{ev_min*100:.1f}%+"
             
-            keyboard = [
+    keyboard = [
         [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual_inline")],
         [InlineKeyboardButton("⚙️ Ajustar Configurações", callback_data="reconfigurar")],
         [InlineKeyboardButton("📊 Ver Filtros Completos", callback_data="ver_filtros_completos")],
@@ -796,7 +796,7 @@ async def scan_manual_inline_callback(update, context):
     chat_id = str(query.message.chat_id)
     resultado = await scan_apostas()
             
-            keyboard = [
+    keyboard = [
         [InlineKeyboardButton("🔄 Novo Scan", callback_data="scan_manual_inline")],
         [InlineKeyboardButton("🏠 Menu Principal", callback_data="start_inicial")],
     ]
@@ -1262,7 +1262,7 @@ async def admin_users_handler(update, context):
     
     if not filtros_por_chat:
         await update.message.reply_text("🔭 Nenhum usuário cadastrado.")
-            return
+        return
         
     msg = "👥 <b>Usuários Ativos:</b>\n\n"
     
@@ -1434,8 +1434,8 @@ async def ligas_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def ligas_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
+    query = update.callback_query
+    await query.answer()
     chat_id = str(query.message.chat.id)
     data = query.data
 
@@ -1521,7 +1521,7 @@ async def callback_bookmaker(update, context):
     query = update.callback_query
     await query.answer()
     chat_id = str(query.message.chat_id)
-        data = query.data
+    data = query.data
 
     if "bookmakers_lista" not in context.user_data:
         await query.edit_message_text("Sessão expirada. Use /bookmakers novamente.")
@@ -1542,7 +1542,7 @@ async def callback_bookmaker(update, context):
         selecionados = context.user_data.get("bookmaker_selecionados", set())
         if escolhido in selecionados:
             selecionados.remove(escolhido)
-            else:
+        else:
             selecionados.add(escolhido)
         context.user_data["bookmaker_selecionados"] = selecionados
         await enviar_pagina_bookmakers(update, context)
@@ -1615,7 +1615,7 @@ async def callback_data_dinamica(update, context):
     
     hoje = datetime.now().date()
     data_fim = hoje + timedelta(days=dias)
-            await query.edit_message_text(
+    await query.edit_message_text(
         f"✅ <b>Filtro dinâmico configurado!</b>\n\n"
         f"📅 Sempre os próximos {dias} dias\n"
         f"🔄 Hoje até {data_fim.strftime('%d/%m/%Y')}\n\n"
@@ -1654,7 +1654,7 @@ async def callback_data_remover(update, context):
     
     salvar_filtros()
             
-            await query.edit_message_text(
+    await query.edit_message_text(
         "🧹 <b>Filtro de data removido!</b>\n\n"
         "Agora você receberá alertas de jogos em qualquer data.",
         parse_mode="HTML"
@@ -1780,7 +1780,7 @@ async def callback_horario_preset(update, context):
         ("19:00", "23:00"): "Futebol BR"
     }.get((inicio, fim), "Personalizado")
     
-                await query.edit_message_text(
+    await query.edit_message_text(
         f"✅ <b>Filtro de horário configurado!</b>\n\n"
         f"🕐 <b>Período:</b> {nome_periodo}\n"
         f"⏰ <b>Horário:</b> {inicio} às {fim}\n\n"
@@ -1795,7 +1795,7 @@ async def callback_horario_custom(update, context):
     
     context.user_data["esperando_horario_custom"] = True
             
-            await query.edit_message_text(
+    await query.edit_message_text(
         "⚙️ <b>Horário Personalizado</b>\n\n"
         "Envie o horário no formato:\n"
         "<code>HH:MM HH:MM</code>\n\n"
