@@ -14,7 +14,8 @@ from config import (
     get_listener_log_path,
     get_telegram_token,
 )
-from database import DatabaseError, SQLiteConnectionConfig, SQLiteConnectionPool
+import sqlite3
+from contextlib import contextmanager
 # from filtros import validar_filtros  # REMOVIDO - agora usa SQLite diretamente
 from math import ceil
 from rate_limiter import api_rate_limiter
@@ -43,12 +44,21 @@ TELEGRAM_TOKEN = get_telegram_token()
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 
 BOT_DB_PATH = Path(os.getenv("BOT_DB_PATH", "bot.sqlite3"))
-_DB_POOL = SQLiteConnectionPool(SQLiteConnectionConfig(BOT_DB_PATH))
+
+@contextmanager
+def get_db_connection():
+    """Context manager para conexão SQLite síncrona"""
+    conn = sqlite3.connect(BOT_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def _fetch_alert_history(chat_id: str) -> list[dict[str, object]]:
     try:
-        with _DB_POOL.get_connection() as conn:
+        with get_db_connection() as conn:
             rows = conn.execute(
                 """
                 SELECT ah.event_date, ah.home_team, ah.away_team, ah.ev_value,
@@ -60,7 +70,7 @@ def _fetch_alert_history(chat_id: str) -> list[dict[str, object]]:
                 """,
                 (chat_id,),
             ).fetchall()
-    except DatabaseError as exc:
+    except sqlite3.Error as exc:
         logging.error("Erro ao carregar histórico do chat %s: %s", chat_id, exc)
         return []
 
@@ -100,7 +110,7 @@ def _fetch_alert_history(chat_id: str) -> list[dict[str, object]]:
 
 def _count_user_alerts(chat_id: str) -> int:
     try:
-        with _DB_POOL.get_connection() as conn:
+        with get_db_connection() as conn:
             row = conn.execute(
                 """
                 SELECT COUNT(*) AS total
@@ -111,7 +121,7 @@ def _count_user_alerts(chat_id: str) -> int:
                 (chat_id,),
             ).fetchone()
             return int(row["total"]) if row else 0
-    except DatabaseError as exc:
+    except sqlite3.Error as exc:
         logging.error("Erro ao contar alertas do chat %s: %s", chat_id, exc)
         return 0
 
@@ -123,7 +133,7 @@ def _count_alerts_on_date(target_date: datetime.date) -> int:
     fim_str = fim.isoformat(sep=" ")
 
     try:
-        with _DB_POOL.get_connection() as conn:
+        with get_db_connection() as conn:
             row = conn.execute(
                 """
                 SELECT COUNT(*) AS total
@@ -134,17 +144,17 @@ def _count_alerts_on_date(target_date: datetime.date) -> int:
                 (inicio_str, fim_str, inicio_str, fim_str),
             ).fetchone()
             return int(row["total"]) if row else 0
-    except DatabaseError as exc:
+    except sqlite3.Error as exc:
         logging.error("Erro ao contar alertas do dia %s: %s", target_date, exc)
         return 0
 
 
 def _count_api_cache_entries() -> int:
     try:
-        with _DB_POOL.get_connection() as conn:
+        with get_db_connection() as conn:
             row = conn.execute("SELECT COUNT(*) AS total FROM api_cache").fetchone()
             return int(row["total"]) if row else 0
-    except DatabaseError as exc:
+    except sqlite3.Error as exc:
         logging.error("Erro ao consultar quantidade de cache: %s", exc)
         return 0
 
@@ -158,7 +168,7 @@ def carregar_filtros_startup():
     logging.info("🔍 Carregamento de filtros do SQLite...")
     try:
         filtros = {}
-        with _DB_POOL.get_connection() as conn:
+        with get_db_connection() as conn:
             # Busca todos os usuários com filtros
             rows = conn.execute("""
                 SELECT chat_id, filter_data, nome, username 
@@ -193,7 +203,7 @@ def salvar_filtros():
         import json
         from datetime import datetime
         
-        with _DB_POOL.transaction() as conn:
+        with get_db_connection() as conn:
             for chat_id, filtros in filtros_por_chat.items():
                 if filtros:  # Só salva se tem dados
                     # Serializa filtros para JSON
