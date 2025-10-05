@@ -494,14 +494,14 @@ async def start_usuario_novo_callback(query, context):
 
 async def start_usuario_novo(update, context):
     """Setup obrigatório para usuário novo"""
-            
+    
     keyboard = [
         [InlineKeyboardButton("🚀 Começar Configuração", callback_data="setup_passo1")],
         [InlineKeyboardButton("📘 Como Funciona?", callback_data="explicar_bot")],
         [InlineKeyboardButton("🎯 Ver Exemplo de Alerta", callback_data="exemplo_alerta")],
-            ]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+            
     msg = (
         "👋 <b>Bem-vindo ao Bot EV+ Profissional!</b>\n\n"
         "🎯 <b>O que fazemos:</b>\n"
@@ -569,8 +569,8 @@ async def setup_passo2_callback(update, context):
         "• <b>Sem limite superior:</b> basta mandar um valor (ex: <code>0.03</code>)\n\n"
         "👉 <b>Use valores decimais, onde 0.05 = 5%</b>"
     )
-    
-    keyboard = [
+            
+            keyboard = [
         [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo1")],
     ]
     
@@ -690,8 +690,8 @@ async def setup_finalizar_callback(update, context):
         ev_texto = f"{ev_min*100:.1f}%-{ev_max*100:.1f}%"
     else:
         ev_texto = f"{ev_min*100:.1f}%+"
-    
-    keyboard = [
+            
+            keyboard = [
         [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual_inline")],
         [InlineKeyboardButton("⚙️ Ajustar Configurações", callback_data="reconfigurar")],
         [InlineKeyboardButton("📊 Ver Filtros Completos", callback_data="ver_filtros_completos")],
@@ -745,8 +745,8 @@ async def exemplo_alerta_callback(update, context):
     """Mostra exemplo de um alerta"""
     query = update.callback_query
     await query.answer()
-    
-    keyboard = [
+            
+            keyboard = [
         [InlineKeyboardButton("🚀 Quero Receber Alertas Assim!", callback_data="setup_passo1")],
         [InlineKeyboardButton("🔙 Voltar", callback_data="start_inicial")],
     ]
@@ -1051,7 +1051,7 @@ async def processar_setup_ev_manual(update, context):
         return True
         
     except Exception:
-        await update.message.reply_text(
+                await update.message.reply_text(
             "❌ <b>Formato inválido!</b>\n\n"
             "📝 <b>Formatos aceitos:</b>\n"
             "• <code>0.05</code> → 5% ou mais\n"
@@ -1253,7 +1253,7 @@ async def admin_users_handler(update, context):
     
     if not filtros_por_chat:
         await update.message.reply_text("🔭 Nenhum usuário cadastrado.")
-        return
+            return
         
     msg = "👥 <b>Usuários Ativos:</b>\n\n"
     
@@ -1352,7 +1352,7 @@ async def admin_broadcast_handler(update, context):
         return
     
     if not context.args:
-        await update.message.reply_text(
+            await update.message.reply_text(
             "📢 <b>Uso:</b> <code>/admin_broadcast sua mensagem aqui</code>\n\n"
             "Esta mensagem será enviada para todos os usuários ativos.",
             parse_mode="HTML"
@@ -1425,8 +1425,8 @@ async def ligas_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def ligas_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+        query = update.callback_query
+        await query.answer()
     chat_id = str(query.message.chat_id)
     data = query.data
 
@@ -1512,7 +1512,7 @@ async def callback_bookmaker(update, context):
     query = update.callback_query
     await query.answer()
     chat_id = str(query.message.chat_id)
-    data = query.data
+        data = query.data
 
     if "bookmakers_lista" not in context.user_data:
         await query.edit_message_text("Sessão expirada. Use /bookmakers novamente.")
@@ -1533,7 +1533,7 @@ async def callback_bookmaker(update, context):
         selecionados = context.user_data.get("bookmaker_selecionados", set())
         if escolhido in selecionados:
             selecionados.remove(escolhido)
-        else:
+            else:
             selecionados.add(escolhido)
         context.user_data["bookmaker_selecionados"] = selecionados
         await enviar_pagina_bookmakers(update, context)
