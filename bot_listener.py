@@ -523,7 +523,7 @@ Use /start para configurar suas preferências pela primeira vez.
         await query.answer()
         
         data = query.data
-        chat_id = query.effective_chat.id
+        chat_id = query.from_user.id
         
         try:
             if data == "config_filtros":
