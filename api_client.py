@@ -176,7 +176,7 @@ class OddsAPI:
     
     async def get_bookmakers(self) -> List[str]:
         """
-        Busca lista de bookmakers disponíveis
+        Busca lista de bookmakers ativos que a API está fornecendo dados
         """
         if not self._check_rate_limit():
             return []
@@ -184,26 +184,35 @@ class OddsAPI:
         try:
             self._log_request()
             
-            url = f"{self.base_url}/sports"
+            # Endpoint específico para bookmakers selecionados/ativos
+            url = f"{self.base_url}/bookmakers/selected"
             params = {'apiKey': self.api_key}
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        # A API retorna esportes, mas precisamos de bookmakers
-                        # Por enquanto, retornamos lista fixa dos principais
-                        return [
-                            'bet365', 'pinnacle', 'betfair', 'unibet', 'betway',
-                            'sportingbet', 'betano', 'betboo', 'betclic', 'betfred'
-                        ]
+                        bookmakers = data.get('bookmakers', [])
+                        print(f"✅ API: {len(bookmakers)} bookmakers ativos encontrados")
+                        return bookmakers
+                    elif response.status == 401:
+                        print("❌ API Key inválida para buscar bookmakers")
+                        return []
                     else:
                         print(f"❌ Erro ao buscar bookmakers: {response.status}")
-                        return []
+                        # Fallback para lista básica se o endpoint falhar
+                        return [
+                            'Bet365', 'Betfair Sportsbook', 'Novibet', 
+                            'Stake.bet.br', 'Superbet', 'Betano'
+                        ]
         
         except Exception as e:
             print(f"❌ Erro ao buscar bookmakers: {e}")
-            return []
+            # Fallback para lista básica em caso de erro
+            return [
+                'Bet365', 'Betfair Sportsbook', 'Novibet', 
+                'Stake.bet.br', 'Superbet', 'Betano'
+            ]
     
     def get_api_status(self) -> Dict:
         """Retorna status atual da API"""
@@ -213,11 +222,15 @@ class OddsAPI:
         """
         Busca apostas da API (método principal usado pelo scanner)
         """
-        # Lista de bookmakers principais
-        bookmakers = ['bet365', 'pinnacle', 'betfair', 'sportingbet', 'betano']
-        
         try:
-            # Busca apostas com valor
+            # Busca bookmakers ativos dinamicamente
+            bookmakers = await self.get_bookmakers()
+            
+            if not bookmakers:
+                print("⚠️ Nenhum bookmaker ativo encontrado")
+                return []
+            
+            # Busca apostas com valor para os bookmakers ativos
             apostas = await self.get_value_bets(bookmakers)
             return apostas
         except Exception as e:
