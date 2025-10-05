@@ -570,7 +570,7 @@ async def setup_passo2_callback(update, context):
         "👉 <b>Use valores decimais, onde 0.05 = 5%</b>"
     )
             
-            keyboard = [
+    keyboard = [
         [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo1")],
     ]
     
@@ -691,7 +691,7 @@ async def setup_finalizar_callback(update, context):
     else:
         ev_texto = f"{ev_min*100:.1f}%+"
             
-            keyboard = [
+    keyboard = [
         [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual_inline")],
         [InlineKeyboardButton("⚙️ Ajustar Configurações", callback_data="reconfigurar")],
         [InlineKeyboardButton("📊 Ver Filtros Completos", callback_data="ver_filtros_completos")],
@@ -708,7 +708,6 @@ async def setup_finalizar_callback(update, context):
         "📡 <i>Monitoramento ativo a cada 5 minutos</i>\n"
         "💡 <i>Use /start para gerenciar suas configurações</i>"
     )
-    
     await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
 async def explicar_bot_callback(update, context):
@@ -746,7 +745,7 @@ async def exemplo_alerta_callback(update, context):
     query = update.callback_query
     await query.answer()
             
-            keyboard = [
+    keyboard = [
         [InlineKeyboardButton("🚀 Quero Receber Alertas Assim!", callback_data="setup_passo1")],
         [InlineKeyboardButton("🔙 Voltar", callback_data="start_inicial")],
     ]
@@ -1059,7 +1058,7 @@ async def processar_setup_ev_manual(update, context):
             "👉 Use valores entre 0.01 e 10.0",
             parse_mode="HTML"
         )
-        return True
+    return True
 
 async def processar_setup_horario_manual(update, context):
     """Processa horário manual durante setup"""
@@ -1253,7 +1252,7 @@ async def admin_users_handler(update, context):
     
     if not filtros_por_chat:
         await update.message.reply_text("🔭 Nenhum usuário cadastrado.")
-            return
+        return
         
     msg = "👥 <b>Usuários Ativos:</b>\n\n"
     
@@ -1357,7 +1356,7 @@ async def admin_broadcast_handler(update, context):
             "Esta mensagem será enviada para todos os usuários ativos.",
             parse_mode="HTML"
         )
-        return
+    return
     
     mensagem = " ".join(context.args)
     enviados = 0
@@ -1425,9 +1424,9 @@ async def ligas_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def ligas_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-    chat_id = str(query.message.chat_id)
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat.id)
     data = query.data
 
     filtros_usuario, _ = atualizar_info_usuario(chat_id, update.effective_user)
@@ -1512,7 +1511,7 @@ async def callback_bookmaker(update, context):
     query = update.callback_query
     await query.answer()
     chat_id = str(query.message.chat_id)
-        data = query.data
+    data = query.data
 
     if "bookmakers_lista" not in context.user_data:
         await query.edit_message_text("Sessão expirada. Use /bookmakers novamente.")
@@ -1533,7 +1532,7 @@ async def callback_bookmaker(update, context):
         selecionados = context.user_data.get("bookmaker_selecionados", set())
         if escolhido in selecionados:
             selecionados.remove(escolhido)
-            else:
+        else:
             selecionados.add(escolhido)
         context.user_data["bookmaker_selecionados"] = selecionados
         await enviar_pagina_bookmakers(update, context)
@@ -1550,12 +1549,13 @@ async def callback_bookmaker(update, context):
                 f"✅ <b>Casas selecionadas:</b> {', '.join(selecionados)}\n\n"
                 "Continuando setup...",
                 parse_mode="HTML"
-            )
-            # Vai para próximo passo do setup
-            await setup_passo2_callback(update, context)
-        else:
-            # Modo normal
-            await query.edit_message_text(f"✅ Casas de aposta salvas: {', '.join(selecionados)}")
+        # Start of Selection
+        )
+        # Vai para próximo passo do setup
+        await setup_passo2_callback(update, context)
+    else:
+        # Modo normal
+        await query.edit_message_text(f"✅ Casas de aposta salvas: {', '.join(selecionados)}")
 
 # ===== FILTROS DE DATA =====
 async def filtros_data_handler(update, context):
@@ -1606,8 +1606,7 @@ async def callback_data_dinamica(update, context):
     
     hoje = datetime.now().date()
     data_fim = hoje + timedelta(days=dias)
-            
-            await query.edit_message_text(
+    await query.edit_message_text(
         f"✅ <b>Filtro dinâmico configurado!</b>\n\n"
         f"📅 Sempre os próximos {dias} dias\n"
         f"🔄 Hoje até {data_fim.strftime('%d/%m/%Y')}\n\n"
@@ -1645,8 +1644,8 @@ async def callback_data_remover(update, context):
     filtros_por_chat[chat_id].pop("filtro_dias", None)
     
     salvar_filtros()
-            
-            await query.edit_message_text(
+    
+    await query.edit_message_text(
         "🧹 <b>Filtro de data removido!</b>\n\n"
         "Agora você receberá alertas de jogos em qualquer data.",
         parse_mode="HTML"
@@ -1772,7 +1771,7 @@ async def callback_horario_preset(update, context):
         ("19:00", "23:00"): "Futebol BR"
     }.get((inicio, fim), "Personalizado")
     
-                await query.edit_message_text(
+    await query.edit_message_text(
         f"✅ <b>Filtro de horário configurado!</b>\n\n"
         f"🕐 <b>Período:</b> {nome_periodo}\n"
         f"⏰ <b>Horário:</b> {inicio} às {fim}\n\n"
@@ -1786,8 +1785,8 @@ async def callback_horario_custom(update, context):
     await query.answer()
     
     context.user_data["esperando_horario_custom"] = True
-            
-            await query.edit_message_text(
+    
+    await query.edit_message_text(
         "⚙️ <b>Horário Personalizado</b>\n\n"
         "Envie o horário no formato:\n"
         "<code>HH:MM HH:MM</code>\n\n"
@@ -1864,7 +1863,7 @@ async def processar_horario_custom(update, context):
             "<code>14:30 22:00</code>",
             parse_mode="HTML"
         )
-        return True
+    return True
 
 # ===== MENUS E CONFIGURAÇÕES =====
 
