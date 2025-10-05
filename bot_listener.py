@@ -1055,20 +1055,43 @@ async def processar_setup_ev_manual(update, context):
         
         await update.message.reply_text(f"{msg}\n\nContinuando setup...", parse_mode="HTML")
         
-        # Vai para próximo passo
-        await setup_passo3_callback(update, context)
+        # MUDANÇA AQUI - chama a função nova
+        await enviar_setup_passo3_message(update, context)
         return True
         
     except Exception:
         await update.message.reply_text(
             "❌ <b>Formato inválido!</b>\n\n"
-            "📝 <b>Formatos aceitos:</b>\n"
+            "📋 <b>Formatos aceitos:</b>\n"
             "• <code>0.05</code> → 5% ou mais\n"
             "• <code>0.03 0.12</code> → 3% até 12%\n\n"
             "👉 Use valores entre 0.01 e 10.0",
             parse_mode="HTML"
         )
     return True
+
+async def enviar_setup_passo3_message(update, context):
+    """Passo 3 do setup enviado como mensagem normal"""
+    keyboard = [
+        [InlineKeyboardButton("🇧🇷 Brasil", callback_data="setup_regiao|brasil")],
+        [InlineKeyboardButton("🇪🇺 Europa", callback_data="setup_regiao|europa")],
+        [InlineKeyboardButton("🌎 América do Sul", callback_data="setup_regiao|americasul")],
+        [InlineKeyboardButton("🌍 Todas as Ligas", callback_data="setup_regiao|todas")],
+        [InlineKeyboardButton("⚙️ Personalizar Ligas", callback_data="setup_ligas_custom")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo2")],
+    ]
+    
+    msg = (
+        "🌍 <b>Passo 3/4: Regiões de Interesse</b>\n\n"
+        "Escolha as regiões que você quer monitorar:\n\n"
+        "🇧🇷 <b>Brasil:</b> Brasileirão, Copa do Brasil, etc.\n"
+        "🇪🇺 <b>Europa:</b> Premier League, La Liga, etc.\n"
+        "🌎 <b>América do Sul:</b> Libertadores, etc.\n"
+        "🌍 <b>Todas:</b> Monitoramento global\n\n"
+        "💡 <b>Dica:</b> Comece com sua região principal"
+    )
+    
+    await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
 async def processar_setup_horario_manual(update, context):
     """Processa horário manual durante setup"""
