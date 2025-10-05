@@ -9,19 +9,19 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
 
-from api_client import OddsAPI
-from bookmaker_config import usuario_configurado
-from config import (
-    get_listener_log_path,
-    get_telegram_token,
-)
-from database import SQLiteConnectionConfig, SQLiteConnectionPool
-from filtros import validar_filtros
+# Imports adaptados para sistema SQLite
+from config import get_listener_log_path, get_telegram_token
+from database import get_db
+from usuarios import get_user_manager
+from cache import get_cache
+from historico import get_history
+from status import get_status
+from rate_limiter import get_rate_limiter
+from filtros import evento_valido, aplicar_filtros_dinamicos
+from bot_core import definir_stake
+from bot_ev import enviar_alertas_batch
+from utils import logger_geral, logger_scan, update_league_catalog, LIGAS_POR_REGIAO
 from math import ceil
-from rate_limiter import api_rate_limiter
-from scanner import scan_apostas
-from status import get_odds_api_status
-from utils import carregar_catalogo_ligas, TRADUCAO_ESPORTE_EN
 
 # Carrega variáveis de ambiente
 load_dotenv()
@@ -37,17 +37,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuração do banco de dados
-def get_database_path():
-    feed_id = os.getenv("FEED_ID", "default")
-    return os.path.join(os.getcwd(), "data", feed_id, "bot.db")
-
-db_config = SQLiteConnectionConfig(
-    database_path=get_database_path(),
-    max_connections=10,
-    timeout=30.0
-)
-db_pool = SQLiteConnectionPool(db_config)
+# Inicializar componentes do sistema SQLite
+db_pool = get_db()
+user_manager = get_user_manager()
+cache = get_cache()
+history = get_history()
+status = get_status()
+rate_limiter = get_rate_limiter()
 
 class BotListener:
     def __init__(self):
@@ -102,7 +98,8 @@ class BotListener:
         
         try:
             # Verifica se o usuário já está configurado
-            if await usuario_configurado(chat_id):
+            user_config = await user_manager.get_user_config(str(chat_id))
+            if user_config:
                 await update.message.reply_text(
                     "👋 Olá! Você já está configurado.\n\n"
                     "Use /filtros para ajustar suas configurações ou /help para ver todos os comandos."
@@ -123,11 +120,13 @@ class BotListener:
         
         # Salva informações básicas do usuário
         try:
-            async with self.db_pool.get_connection() as conn:
-                await conn.execute("""
-                    INSERT OR REPLACE INTO users (chat_id, nome, username, created_at, updated_at, is_active)
-                    VALUES (?, ?, ?, datetime('now'), datetime('now'), 1)
-                """, (chat_id, user.first_name or "", user.username or "",))
+            user_info = {
+                'chat_id': str(chat_id),
+                'first_name': user.first_name or "",
+                'username': user.username or "",
+                'last_name': user.last_name or ""
+            }
+            await user_manager.add_user(user_info)
         except Exception as e:
             logger.error(f"Erro ao salvar usuário: {e}")
         
@@ -180,27 +179,24 @@ Use /start para configurar suas preferências pela primeira vez.
         """Handler do comando /status"""
         try:
             # Status da API
-            api_status = await get_odds_api_status()
+            system_status = await status.get_system_status()
             
             # Status do rate limiter
-            requests_count = await api_rate_limiter.get_requests_count()
+            rate_stats = await rate_limiter.get_stats()
             
             # Status do banco
             try:
-                async with self.db_pool.get_connection() as conn:
-                    cursor = await conn.execute("SELECT COUNT(*) as total FROM users WHERE is_active = 1")
-                    result = await cursor.fetchone()
-                    users_count = result['total'] if result else 0
+                users_count = await user_manager.get_user_count()
             except Exception:
                 users_count = "Erro"
             
             status_text = f"""
 📊 **Status do Sistema:**
 
-🔌 **API Odds:** {'✅ Online' if api_status else '❌ Offline'}
-📈 **Requests (última hora):** {requests_count}/4800
+🔌 **API Odds:** {'✅ Online' if system_status.get('online') else '❌ Offline'}
+📈 **Requests (última hora):** {rate_stats.get('requests_used', 0)}/{rate_stats.get('requests_max', 4800)}
 👥 **Usuários ativos:** {users_count}
-⏰ **Última atualização:** {datetime.now().strftime('%H:%M:%S')}
+⏰ **Última atualização:** {system_status.get('last_update', datetime.now().strftime('%H:%M:%S'))}
 
 🔄 **Próximo scan:** A cada 2 minutos
             """
@@ -217,13 +213,9 @@ Use /start para configurar suas preferências pela primeira vez.
         
         try:
             # Busca filtros atuais do usuário
-            async with self.db_pool.get_connection() as conn:
-                cursor = await conn.execute("""
-                    SELECT * FROM user_filters WHERE chat_id = ?
-                """, (chat_id,))
-                filtros = await cursor.fetchone()
+            user_config = await user_manager.get_user_config(str(chat_id))
             
-            if not filtros:
+            if not user_config or not user_config.get('filters'):
                 await update.message.reply_text(
                     "❌ Você ainda não configurou seus filtros.\n"
                     "Use /start para começar a configuração."
@@ -231,15 +223,16 @@ Use /start para configurar suas preferências pela primeira vez.
                 return
             
             # Mostra filtros atuais
+            filtros = user_config.get('filters', {})
             filtros_text = f"""
 ⚙️ **Seus Filtros Atuais:**
 
-📊 **EV Mínimo:** {filtros['ev_minimo']:.2%}
-📊 **EV Máximo:** {filtros['ev_maximo']:.2%}
-⏰ **Horário Início:** {filtros['horario_inicio'] or 'Não definido'}
-⏰ **Horário Fim:** {filtros['horario_fim'] or 'Não definido'}
-📅 **Data Início:** {filtros['data_inicio'] or 'Não definido'}
-📅 **Data Fim:** {filtros['data_fim'] or 'Não definido'}
+📊 **EV Mínimo:** {filtros.get('ev_min', 0.05):.2%}
+📊 **EV Máximo:** {filtros.get('ev_max', 0.50):.2%}
+⏰ **Horário Início:** {filtros.get('horario_inicio', 'Não definido')}
+⏰ **Horário Fim:** {filtros.get('horario_fim', 'Não definido')}
+📅 **Data Início:** {filtros.get('data_inicio', 'Não definido')}
+📅 **Data Fim:** {filtros.get('data_fim', 'Não definido')}
             """
             
             keyboard = [
@@ -263,14 +256,8 @@ Use /start para configurar suas preferências pela primeira vez.
         
         try:
             # Busca ligas selecionadas pelo usuário
-            async with self.db_pool.get_connection() as conn:
-                cursor = await conn.execute("""
-                    SELECT ul.league_name 
-                    FROM user_leagues ul 
-                    WHERE ul.chat_id = ?
-                    ORDER BY ul.league_name
-                """, (chat_id,))
-                ligas_selecionadas = await cursor.fetchall()
+            user_config = await user_manager.get_user_config(str(chat_id))
+            ligas_selecionadas = user_config.get('leagues', []) if user_config else []
             
             if not ligas_selecionadas:
                 await update.message.reply_text(
@@ -281,7 +268,7 @@ Use /start para configurar suas preferências pela primeira vez.
             
             ligas_text = "🏆 **Ligas Selecionadas:**\n\n"
             for liga in ligas_selecionadas:
-                ligas_text += f"• {liga['league_name']}\n"
+                ligas_text += f"• {liga}\n"
             
             keyboard = [
                 [InlineKeyboardButton("✏️ Editar Ligas", callback_data="edit_ligas")]
@@ -304,14 +291,8 @@ Use /start para configurar suas preferências pela primeira vez.
         
         try:
             # Busca esportes selecionados pelo usuário
-            async with self.db_pool.get_connection() as conn:
-                cursor = await conn.execute("""
-                    SELECT us.sport_name 
-                    FROM user_sports us 
-                    WHERE us.chat_id = ?
-                    ORDER BY us.sport_name
-                """, (chat_id,))
-                esportes_selecionados = await cursor.fetchall()
+            user_config = await user_manager.get_user_config(str(chat_id))
+            esportes_selecionados = user_config.get('sports', []) if user_config else []
             
             if not esportes_selecionados:
                 await update.message.reply_text(
@@ -322,7 +303,7 @@ Use /start para configurar suas preferências pela primeira vez.
             
             esportes_text = "⚽ **Esportes Selecionados:**\n\n"
             for esporte in esportes_selecionados:
-                esportes_text += f"• {esporte['sport_name']}\n"
+                esportes_text += f"• {esporte}\n"
             
             keyboard = [
                 [InlineKeyboardButton("✏️ Editar Esportes", callback_data="edit_esportes")]
@@ -345,14 +326,8 @@ Use /start para configurar suas preferências pela primeira vez.
         
         try:
             # Busca bookmakers selecionados pelo usuário
-            async with self.db_pool.get_connection() as conn:
-                cursor = await conn.execute("""
-                    SELECT ub.bookmaker_name 
-                    FROM user_bookmakers ub 
-                    WHERE ub.chat_id = ?
-                    ORDER BY ub.bookmaker_name
-                """, (chat_id,))
-                bookmakers_selecionados = await cursor.fetchall()
+            user_config = await user_manager.get_user_config(str(chat_id))
+            bookmakers_selecionados = user_config.get('bookmakers', []) if user_config else []
             
             if not bookmakers_selecionados:
                 await update.message.reply_text(
@@ -363,7 +338,7 @@ Use /start para configurar suas preferências pela primeira vez.
             
             bookmakers_text = "🏪 **Bookmakers Selecionados:**\n\n"
             for bookmaker in bookmakers_selecionados:
-                bookmakers_text += f"• {bookmaker['bookmaker_name']}\n"
+                bookmakers_text += f"• {bookmaker}\n"
             
             keyboard = [
                 [InlineKeyboardButton("✏️ Editar Bookmakers", callback_data="edit_bookmakers")]
@@ -386,14 +361,7 @@ Use /start para configurar suas preferências pela primeira vez.
         
         try:
             # Busca histórico recente do usuário
-            async with self.db_pool.get_connection() as conn:
-                cursor = await conn.execute("""
-                    SELECT * FROM alert_history 
-                    WHERE chat_id = ? 
-                    ORDER BY created_at DESC 
-                    LIMIT 10
-                """, (chat_id,))
-                historico = await cursor.fetchall()
+            historico = await history.get_user_alerts(str(chat_id), limit=10)
             
             if not historico:
                 await update.message.reply_text(
@@ -404,10 +372,10 @@ Use /start para configurar suas preferências pela primeira vez.
             
             historico_text = "📝 **Últimos 10 Alertas:**\n\n"
             for alerta in historico:
-                data_hora = datetime.fromisoformat(alerta['created_at']).strftime('%d/%m %H:%M')
-                ev_pct = float(alerta['ev']) * 100
-                historico_text += f"• {data_hora} - {alerta['home']} vs {alerta['away']}\n"
-                historico_text += f"  EV: {ev_pct:.2f}% | Odd: {alerta['odds']}\n\n"
+                data_hora = alerta.get('created_at', '').strftime('%d/%m %H:%M') if alerta.get('created_at') else 'N/A'
+                ev_pct = float(alerta.get('ev', 0)) * 100
+                historico_text += f"• {data_hora} - {alerta.get('home', 'N/A')} vs {alerta.get('away', 'N/A')}\n"
+                historico_text += f"  EV: {ev_pct:.2f}% | Odd: {alerta.get('odds', 'N/A')}\n\n"
             
             await update.message.reply_text(historico_text, parse_mode='Markdown')
             
@@ -421,31 +389,19 @@ Use /start para configurar suas preferências pela primeira vez.
         
         try:
             # Calcula estatísticas do usuário
-            async with self.db_pool.get_connection() as conn:
-                # Total de alertas
-                cursor = await conn.execute("""
-                    SELECT COUNT(*) as total FROM alert_history WHERE chat_id = ?
-                """, (chat_id,))
-                total_alertas = (await cursor.fetchone())['total']
-                
-                # Alertas hoje
-                cursor = await conn.execute("""
-                    SELECT COUNT(*) as total FROM alert_history 
-                    WHERE chat_id = ? AND DATE(created_at) = DATE('now')
-                """, (chat_id,))
-                alertas_hoje = (await cursor.fetchone())['total']
-                
-                # EV médio
-                cursor = await conn.execute("""
-                    SELECT AVG(ev) as ev_medio FROM alert_history WHERE chat_id = ?
-                """, (chat_id,))
-                ev_medio = (await cursor.fetchone())['ev_medio'] or 0
-                
-                # Primeiro alerta
-                cursor = await conn.execute("""
-                    SELECT MIN(created_at) as primeiro FROM alert_history WHERE chat_id = ?
-                """, (chat_id,))
-                primeiro_alerta = (await cursor.fetchone())['primeiro']
+            user_alerts = await history.get_user_alerts(str(chat_id))
+            total_alertas = len(user_alerts)
+            
+            # Alertas hoje
+            hoje = datetime.now().date()
+            alertas_hoje = len([a for a in user_alerts if a.get('created_at') and a['created_at'].date() == hoje])
+            
+            # EV médio
+            evs = [float(a.get('ev', 0)) for a in user_alerts if a.get('ev')]
+            ev_medio = sum(evs) / len(evs) if evs else 0
+            
+            # Primeiro alerta
+            primeiro_alerta = min([a.get('created_at') for a in user_alerts if a.get('created_at')], default=None)
             
             stats_text = f"""
 📊 **Suas Estatísticas:**
@@ -453,7 +409,7 @@ Use /start para configurar suas preferências pela primeira vez.
 🎯 **Total de Alertas:** {total_alertas}
 📅 **Alertas Hoje:** {alertas_hoje}
 📈 **EV Médio:** {ev_medio*100:.2f}%
-🕐 **Primeiro Alerta:** {primeiro_alerta[:10] if primeiro_alerta else 'Nenhum'}
+🕐 **Primeiro Alerta:** {primeiro_alerta.strftime('%Y-%m-%d') if primeiro_alerta else 'Nenhum'}
             """
             
             await update.message.reply_text(stats_text, parse_mode='Markdown')
@@ -473,31 +429,26 @@ Use /start para configurar suas preferências pela primeira vez.
         
         try:
             # Estatísticas gerais do sistema
-            async with self.db_pool.get_connection() as conn:
-                # Total de usuários
-                cursor = await conn.execute("SELECT COUNT(*) as total FROM users WHERE is_active = 1")
-                total_usuarios = (await cursor.fetchone())['total']
-                
-                # Alertas hoje
-                cursor = await conn.execute("""
-                    SELECT COUNT(*) as total FROM alert_history 
-                    WHERE DATE(created_at) = DATE('now')
-                """)
-                alertas_hoje = (await cursor.fetchone())['total']
-                
-                # Status da API
-                api_status = await get_odds_api_status()
-                
-                # Requests da última hora
-                requests_count = await api_rate_limiter.get_requests_count()
+            total_usuarios = await user_manager.get_user_count()
+            
+            # Alertas hoje
+            system_status = await status.get_system_status()
+            alertas_hoje = system_status.get('alerts_today', 0)
+            
+            # Status da API
+            api_online = system_status.get('online', False)
+            
+            # Requests da última hora
+            rate_stats = await rate_limiter.get_stats()
+            requests_count = rate_stats.get('requests_used', 0)
             
             admin_text = f"""
 🔧 **Painel Administrativo:**
 
 👥 **Usuários Ativos:** {total_usuarios}
 📊 **Alertas Hoje:** {alertas_hoje}
-🔌 **API Status:** {'✅ Online' if api_status else '❌ Offline'}
-📈 **Requests (1h):** {requests_count}/4800
+🔌 **API Status:** {'✅ Online' if api_online else '❌ Offline'}
+📈 **Requests (1h):** {requests_count}/{rate_stats.get('requests_max', 4800)}
             """
             
             keyboard = [
@@ -578,11 +529,8 @@ Use /start para configurar suas preferências pela primeira vez.
             
             # Busca ligas já selecionadas
             chat_id = query.effective_chat.id
-            async with self.db_pool.get_connection() as conn:
-                cursor = await conn.execute("""
-                    SELECT league_name FROM user_leagues WHERE chat_id = ?
-                """, (chat_id,))
-                ligas_selecionadas = {row['league_name'] for row in await cursor.fetchall()}
+            user_config = await user_manager.get_user_config(str(chat_id))
+            ligas_selecionadas = set(user_config.get('leagues', [])) if user_config else set()
             
             # Cria teclado com ligas
             keyboard = []
@@ -615,11 +563,8 @@ Use /start para configurar suas preferências pela primeira vez.
             
             # Busca esportes já selecionados
             chat_id = query.effective_chat.id
-            async with self.db_pool.get_connection() as conn:
-                cursor = await conn.execute("""
-                    SELECT sport_name FROM user_sports WHERE chat_id = ?
-                """, (chat_id,))
-                esportes_selecionados = {row['sport_name'] for row in await cursor.fetchall()}
+            user_config = await user_manager.get_user_config(str(chat_id))
+            esportes_selecionados = set(user_config.get('sports', [])) if user_config else set()
             
             # Cria teclado com esportes
             keyboard = []
@@ -652,11 +597,8 @@ Use /start para configurar suas preferências pela primeira vez.
             
             # Busca bookmakers já selecionados
             chat_id = query.effective_chat.id
-            async with self.db_pool.get_connection() as conn:
-                cursor = await conn.execute("""
-                    SELECT bookmaker_name FROM user_bookmakers WHERE chat_id = ?
-                """, (chat_id,))
-                bookmakers_selecionados = {row['bookmaker_name'] for row in await cursor.fetchall()}
+            user_config = await user_manager.get_user_config(str(chat_id))
+            bookmakers_selecionados = set(user_config.get('bookmakers', [])) if user_config else set()
             
             # Cria teclado com bookmakers
             keyboard = []
@@ -687,30 +629,16 @@ Use /start para configurar suas preferências pela primeira vez.
         
         try:
             # Verifica se tem configurações mínimas
-            async with self.db_pool.get_connection() as conn:
-                # Verifica filtros
-                cursor = await conn.execute("""
-                    SELECT COUNT(*) as count FROM user_filters WHERE chat_id = ?
-                """, (chat_id,))
-                tem_filtros = (await cursor.fetchone())['count'] > 0
-                
-                # Verifica ligas
-                cursor = await conn.execute("""
-                    SELECT COUNT(*) as count FROM user_leagues WHERE chat_id = ?
-                """, (chat_id,))
-                tem_ligas = (await cursor.fetchone())['count'] > 0
-                
-                # Verifica esportes
-                cursor = await conn.execute("""
-                    SELECT COUNT(*) as count FROM user_sports WHERE chat_id = ?
-                """, (chat_id,))
-                tem_esportes = (await cursor.fetchone())['count'] > 0
-                
-                # Verifica bookmakers
-                cursor = await conn.execute("""
-                    SELECT COUNT(*) as count FROM user_bookmakers WHERE chat_id = ?
-                """, (chat_id,))
-                tem_bookmakers = (await cursor.fetchone())['count'] > 0
+            user_config = await user_manager.get_user_config(str(chat_id))
+            
+            if not user_config:
+                await query.edit_message_text("❌ Usuário não encontrado. Use /start primeiro.")
+                return
+            
+            tem_filtros = bool(user_config.get('filters'))
+            tem_ligas = bool(user_config.get('leagues'))
+            tem_esportes = bool(user_config.get('sports'))
+            tem_bookmakers = bool(user_config.get('bookmakers'))
             
             if not (tem_filtros and tem_ligas and tem_esportes and tem_bookmakers):
                 await query.edit_message_text(
@@ -726,11 +654,7 @@ Use /start para configurar suas preferências pela primeira vez.
                 return
             
             # Marca usuário como configurado
-            async with self.db_pool.get_connection() as conn:
-                await conn.execute("""
-                    UPDATE users SET is_active = 1, updated_at = datetime('now')
-                    WHERE chat_id = ?
-                """, (chat_id,))
+            await user_manager.update_user_status(str(chat_id), is_active=True)
             
             await query.edit_message_text(
                 "🎉 **Configuração Finalizada!**\n\n"
@@ -814,12 +738,15 @@ Use /start para configurar suas preferências pela primeira vez.
             
             # Salva no banco
             chat_id = update.effective_chat.id
-            async with self.db_pool.get_connection() as conn:
-                await conn.execute("""
-                    INSERT OR REPLACE INTO user_filters 
-                    (chat_id, ev_minimo, ev_maximo, horario_inicio, horario_fim, data_inicio, data_fim, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                """, (chat_id, ev_min, ev_max, hora_ini, hora_fim, data_ini, data_fim))
+            filters_data = {
+                'ev_min': ev_min,
+                'ev_max': ev_max,
+                'horario_inicio': hora_ini,
+                'horario_fim': hora_fim,
+                'data_inicio': data_ini,
+                'data_fim': data_fim
+            }
+            await user_manager.update_user_config(str(chat_id), {'filters': filters_data})
             
             await update.message.reply_text(
                 f"✅ **Filtros Configurados!**\n\n"
