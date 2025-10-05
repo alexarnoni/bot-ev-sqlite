@@ -15,7 +15,7 @@ from config import (
     get_telegram_token,
 )
 from database import DatabaseError, SQLiteConnectionConfig, SQLiteConnectionPool
-from filtros import validar_filtros
+# from filtros import validar_filtros  # REMOVIDO - agora usa SQLite diretamente
 from math import ceil
 from rate_limiter import api_rate_limiter
 from scanner import scan_apostas
@@ -154,10 +154,31 @@ def is_admin(chat_id):
 
 # ----- Carregar filtros diretamente do banco de dados -----
 def carregar_filtros_startup():
-    logging.info("🔍 Carregamento de filtros iniciado...")
+    """Carrega filtros diretamente do SQLite"""
+    logging.info("🔍 Carregamento de filtros do SQLite...")
     try:
-        filtros = validar_filtros()
-        logging.info(f"✅ {len(filtros)} filtros carregados")
+        filtros = {}
+        with _DB_POOL.connection() as conn:
+            # Busca todos os usuários com filtros
+            rows = conn.execute("""
+                SELECT chat_id, filter_data, nome, username 
+                FROM users 
+                WHERE filter_data IS NOT NULL AND filter_data != '{}'
+            """).fetchall()
+            
+            for row in rows:
+                chat_id = row["chat_id"]
+                filter_data = row["filter_data"]
+                
+                if filter_data:
+                    try:
+                        import json
+                        filtros[chat_id] = json.loads(filter_data)
+                    except (json.JSONDecodeError, TypeError):
+                        logging.warning(f"Filtros inválidos para chat_id {chat_id}")
+                        continue
+        
+        logging.info(f"✅ {len(filtros)} filtros carregados do SQLite")
         return filtros
     except Exception as exc:
         logging.error(f"❌ Erro no carregamento: {exc}")
@@ -167,17 +188,25 @@ filtros_por_chat = carregar_filtros_startup()
 
 
 def salvar_filtros():
-    """Salva filtros diretamente no banco sem usar validar_filtros"""
+    """Salva filtros diretamente no SQLite"""
     try:
-        from filtros import _ensure_user, _persist_filter
-
+        import json
+        from datetime import datetime
+        
         with _DB_POOL.transaction() as conn:
             for chat_id, filtros in filtros_por_chat.items():
                 if filtros:  # Só salva se tem dados
-                    user_id = _ensure_user(conn, str(chat_id), filtros)
-                    _persist_filter(conn, user_id, filtros)
+                    # Serializa filtros para JSON
+                    filter_data = json.dumps(filtros)
+                    
+                    # UPSERT na tabela users
+                    conn.execute("""
+                        INSERT OR REPLACE INTO users 
+                        (chat_id, filter_data, updated_at) 
+                        VALUES (?, ?, ?)
+                    """, (str(chat_id), filter_data, datetime.now().isoformat()))
 
-        logging.info(f"💾 {len(filtros_por_chat)} filtros salvos no banco")
+        logging.info(f"💾 {len(filtros_por_chat)} filtros salvos no SQLite")
     except Exception as exc:
         logging.error(f"❌ Erro ao salvar filtros: {exc}")
         import traceback
@@ -242,7 +271,7 @@ def converter_filtro_estatico_para_dinamico():
                     conversoes += 1
                     logging.info(f"   ✅ {chat_id}: Estático expirado → Dinâmico 7 dias")
                     
-            except Exception as e:
+        except Exception as e:
                 logging.warning(f"Erro ao converter filtro de {chat_id}: {e}")
     
     if conversoes > 0:
@@ -371,14 +400,14 @@ async def start_usuario_configurado(update, context, filtros_usuario):
         status_horario = "24h"
     
     # Menu contextual
-    keyboard = [
+        keyboard = [
         [InlineKeyboardButton("⚙️ Alterar Configurações", callback_data="reconfigurar")],
         [InlineKeyboardButton("📊 Ver Filtros Detalhados", callback_data="ver_filtros_completos")],
         [InlineKeyboardButton("🔍 Scan Manual Agora", callback_data="scan_manual_inline")],
         [InlineKeyboardButton("📈 Histórico de Alertas", callback_data="ver_historico")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
     # EV texto - Mínimo ou faixa
     if ev_max and ev_max < 99:
         ev_texto = f"{ev_min*100:.1f}%-{ev_max*100:.1f}%"
@@ -499,14 +528,14 @@ async def start_usuario_novo_callback(query, context):
 
 async def start_usuario_novo(update, context):
     """Setup obrigatório para usuário novo"""
-    
-    keyboard = [
+            
+            keyboard = [
         [InlineKeyboardButton("🚀 Começar Configuração", callback_data="setup_passo1")],
         [InlineKeyboardButton("📘 Como Funciona?", callback_data="explicar_bot")],
         [InlineKeyboardButton("🎯 Ver Exemplo de Alerta", callback_data="exemplo_alerta")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
     msg = (
         "👋 <b>Bem-vindo ao Bot EV+ Profissional!</b>\n\n"
         "🎯 <b>O que fazemos:</b>\n"
@@ -546,7 +575,175 @@ async def setup_passo1_callback(update, context):
     
     await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
-# ===== FUNÇÕES PRINCIPAIS RESTANTES =====
+async def setup_bookmakers_callback(update, context):
+    """Redireciona para seleção de bookmakers no modo setup"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Marca que estamos em modo setup
+    context.user_data["setup_mode"] = True
+    context.user_data["setup_step"] = "bookmakers"
+    
+    # Usa a função existente mas adapta para setup
+    await escolher_bookmaker(update, context)
+
+async def setup_passo2_callback(update, context):
+    """Passo 2: Configurar EV - FAIXA MANUAL"""
+    query = update.callback_query
+    await query.answer()
+    
+    # SÓ entrada manual - exatamente como sua foto!
+    context.user_data["setup_esperando_ev"] = True
+    
+    msg = (
+        "📈 <b>Passo 2/4: EV Mínimo</b>\n\n"
+        "📝 <b>Envie sua configuração de EV:</b>\n\n"
+        "• <b>Apenas mínimo:</b> <code>0.01</code> (1% ou mais)\n"
+        "• <b>Faixa completa:</b> <code>0.01 0.15</code> (1% até 15%)\n"
+        "• <b>Sem limite superior:</b> basta mandar um valor (ex: <code>0.03</code>)\n\n"
+        "👉 <b>Use valores decimais, onde 0.05 = 5%</b>"
+    )
+            
+            keyboard = [
+        [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo1")],
+    ]
+    
+    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+async def setup_passo3_callback(update, context):
+    """Passo 3: Escolher regiões/ligas"""
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("🇧🇷 Brasil", callback_data="setup_regiao|brasil")],
+        [InlineKeyboardButton("🇪🇺 Europa", callback_data="setup_regiao|europa")],
+        [InlineKeyboardButton("🌎 América do Sul", callback_data="setup_regiao|americasul")],
+        [InlineKeyboardButton("🌍 Todas as Ligas", callback_data="setup_regiao|todas")],
+        [InlineKeyboardButton("⚙️ Personalizar Ligas", callback_data="setup_ligas_custom")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo2")],
+    ]
+    
+    msg = (
+        "🌍 <b>Passo 3/4: Regiões de Interesse</b>\n\n"
+        "Escolha as regiões que você quer monitorar:\n\n"
+        "🇧🇷 <b>Brasil:</b> Brasileirão, Copa do Brasil, etc.\n"
+        "🇪🇺 <b>Europa:</b> Premier League, La Liga, etc.\n"
+        "🌎 <b>América do Sul:</b> Libertadores, etc.\n"
+        "🌍 <b>Todas:</b> Monitoramento global\n\n"
+        "💡 <b>Dica:</b> Comece com sua região principal"
+    )
+    
+    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+async def setup_regiao_callback(update, context):
+    """Processa seleção de região no setup"""
+    query = update.callback_query
+    await query.answer()
+    
+    regiao = query.data.split("|")[1]
+    chat_id = str(query.message.chat_id)
+    
+    # Aplica filtro de região usando lógica existente
+    catalogo = carregar_catalogo_ligas()
+    filtros_usuario = filtros_por_chat.setdefault(chat_id, {})
+    
+    if regiao == "brasil":
+        filtros_usuario["ligas"] = catalogo.get("Brasil", {}).get("Football", [])
+    elif regiao == "europa":
+        filtros_usuario["ligas"] = catalogo.get("Europa", {}).get("Football", [])
+    elif regiao == "americasul":
+        filtros_usuario["ligas"] = catalogo.get("América do Sul", {}).get("Football", [])
+    elif regiao == "todas":
+        filtros_usuario["ligas"] = None
+    
+    salvar_filtros()
+    
+    # Vai para passo final
+    await setup_passo4_callback(update, context)
+
+async def setup_passo4_callback(update, context):
+    """Passo 4: Configurações opcionais"""
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("🌆 Apenas Noite (19h-23h)", callback_data="setup_horario|19:00|23:00")],
+        [InlineKeyboardButton("☀️ Apenas Tarde (14h-18h)", callback_data="setup_horario|14:00|18:00")],
+        [InlineKeyboardButton("🕐 Personalizar Horário", callback_data="setup_horario_custom")],
+        [InlineKeyboardButton("⏭️ Pular (24h)", callback_data="setup_finalizar")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo3")],
+    ]
+    
+    msg = (
+        "🕐 <b>Passo 4/4: Horários (Opcional)</b>\n\n"
+        "Quer receber alertas apenas em horários específicos?\n\n"
+        "🌆 <b>Noite:</b> Ideal para futebol brasileiro\n"
+        "☀️ <b>Tarde:</b> Ideal para futebol europeu\n"
+        "🕐 <b>Personalizar:</b> Defina seu horário\n"
+        "⏭️ <b>Pular:</b> Receber alertas 24h\n\n"
+        "💡 <b>Dica:</b> Você pode alterar depois"
+    )
+    
+    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+async def setup_horario_callback(update, context):
+    """Processa seleção de horário no setup"""
+    query = update.callback_query
+    await query.answer()
+    
+    _, inicio, fim = query.data.split("|")
+    chat_id = str(query.message.chat_id)
+    
+    # Salva horário
+    filtros_por_chat.setdefault(chat_id, {})["horario_inicio"] = inicio
+    filtros_por_chat[chat_id]["horario_fim"] = fim
+    salvar_filtros()
+    
+    # Finaliza setup
+    await setup_finalizar_callback(update, context)
+
+async def setup_finalizar_callback(update, context):
+    """Finaliza o setup e mostra resumo"""
+    query = update.callback_query
+    await query.answer()
+    
+    chat_id = str(query.message.chat_id)
+    filtros = filtros_por_chat.get(chat_id, {})
+    
+    # Gera resumo da configuração
+    bookmakers = filtros.get("bookmakers", ["Bet365"])
+    ev_min = filtros.get("ev_faixa_min", 0.05)
+    ev_max = filtros.get("ev_faixa_max")
+    ligas = filtros.get("ligas")
+    horario_inicio = filtros.get("horario_inicio")
+    horario_fim = filtros.get("horario_fim")
+    
+    # EV texto
+    if ev_max and ev_max < 99:
+        ev_texto = f"{ev_min*100:.1f}%-{ev_max*100:.1f}%"
+    else:
+        ev_texto = f"{ev_min*100:.1f}%+"
+            
+            keyboard = [
+        [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual_inline")],
+        [InlineKeyboardButton("⚙️ Ajustar Configurações", callback_data="reconfigurar")],
+        [InlineKeyboardButton("📊 Ver Filtros Completos", callback_data="ver_filtros_completos")],
+    ]
+    
+    msg = (
+        "🎉 <b>Configuração Concluída!</b>\n\n"
+        "✅ <b>Bot ativo e monitorando:</b>\n"
+        f"🏠 <b>Casas:</b> {', '.join(bookmakers[:2])}\n"
+        f"📈 <b>EV:</b> {ev_texto}\n"
+        f"🌍 <b>Ligas:</b> {'Personalizadas' if ligas else 'Todas'}\n"
+        f"🕐 <b>Horário:</b> {f'{horario_inicio}-{horario_fim}' if horario_inicio else '24h'}\n\n"
+        "🔔 <b>A partir de agora você receberá alertas automáticos!</b>\n\n"
+        "📡 <i>Monitoramento ativo a cada 5 minutos</i>\n"
+        "💡 <i>Use /start para gerenciar suas configurações</i>"
+    )
+    
+    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
 async def explicar_bot_callback(update, context):
     """Explica como o bot funciona"""
@@ -582,8 +779,8 @@ async def exemplo_alerta_callback(update, context):
     """Mostra exemplo de um alerta"""
     query = update.callback_query
     await query.answer()
-    
-    keyboard = [
+            
+            keyboard = [
         [InlineKeyboardButton("🚀 Quero Receber Alertas Assim!", callback_data="setup_passo1")],
         [InlineKeyboardButton("🔙 Voltar", callback_data="start_inicial")],
     ]
@@ -779,11 +976,516 @@ async def ver_filtros_inline_detalhado(update, context, chat_id):
             msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
         )
     else:
-        await update.message.reply_text(
+            await update.message.reply_text(
             msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
         )
 
-# ===== FUNÇÕES DE CONFIGURAÇÃO =====
+async def setup_ligas_custom_callback(update, context):
+    """Ligas personalizadas no setup"""
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("⚽ Usar /ligas para personalizar", callback_data="explicar_ligas_custom")],
+        [InlineKeyboardButton("⏭️ Pular por agora", callback_data="setup_passo4")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo3")],
+    ]
+    
+    msg = (
+        "⚙️ <b>Ligas Personalizadas</b>\n\n"
+        "Para selecionar ligas específicas, use:\n"
+        "<code>/ligas brasil futebol</code>\n\n"
+        "Isso permite escolher exatamente quais campeonatos monitorar.\n\n"
+        "💡 <b>Dica:</b> Configure isso depois do setup inicial"
+    )
+    
+    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+async def setup_horario_custom_callback(update, context):
+    """Horário personalizado no setup"""
+    query = update.callback_query
+    await query.answer()
+    
+    context.user_data["setup_esperando_horario"] = True
+    
+    await query.edit_message_text(
+        "🕐 <b>Horário Personalizado</b>\n\n"
+        "Digite o horário no formato:\n"
+        "<code>HH:MM HH:MM</code>\n\n"
+        "📝 <b>Exemplos:</b>\n"
+        "• <code>15:00 22:00</code> → Das 15h às 22h\n"
+        "• <code>20:30 23:30</code> → Das 20h30 às 23h30\n\n"
+        "💡 Use formato 24h",
+        parse_mode="HTML"
+    )
+
+async def explicar_ligas_custom_callback(update, context):
+    """Explica como usar ligas customizadas"""
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("⏭️ Continuar Setup", callback_data="setup_passo4")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo3")],
+    ]
+    
+    msg = (
+        "⚙️ <b>Como Personalizar Ligas</b>\n\n"
+        "Após finalizar o setup, use estes comandos:\n\n"
+        "🇧🇷 <code>/ligas brasil futebol</code>\n"
+        "🇪🇺 <code>/ligas europa futebol</code>\n"
+        "🏀 <code>/ligas europa basquete</code>\n\n"
+        "Isso abre uma interface para selecionar exatamente quais campeonatos você quer monitorar.\n\n"
+        "💡 <b>Dica:</b> Primeiro termine o setup, depois personalize!"
+    )
+    
+    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+async def processar_setup_ev_manual(update, context):
+    """Processa EV manual durante setup - FAIXA MANUAL"""
+    try:
+        entrada = update.message.text.strip()
+        partes = entrada.split()
+        
+        chat_id = str(update.effective_chat.id)
+        
+        if len(partes) == 1:
+            # Apenas mínimo: 0.05
+            ev_min = float(partes[0])
+            if ev_min < 0.01 or ev_min > 10.0:
+                raise ValueError("Fora do range")
+            
+            filtros_por_chat.setdefault(chat_id, {})["ev_faixa_min"] = ev_min
+            filtros_por_chat[chat_id]["ev_faixa_max"] = 9999.0  # Sem limite superior
+            msg = f"✅ <b>EV configurado: {ev_min*100:.1f}% ou mais</b>"
+            
+        elif len(partes) == 2:
+            # Faixa completa: 0.01 0.15
+            ev_min, ev_max = float(partes[0]), float(partes[1])
+            
+            if ev_min < 0.01 or ev_min > 10.0:
+                raise ValueError("Min fora do range")
+            if ev_max < ev_min or ev_max > 10.0:
+                raise ValueError("Max inválido")
+            
+            filtros_por_chat.setdefault(chat_id, {})["ev_faixa_min"] = ev_min
+            filtros_por_chat[chat_id]["ev_faixa_max"] = ev_max
+            msg = f"✅ <b>EV configurado: {ev_min*100:.1f}% até {ev_max*100:.1f}%</b>"
+            
+        else:
+            raise ValueError("Formato inválido")
+        
+        salvar_filtros()
+        context.user_data["setup_esperando_ev"] = False
+        
+        await update.message.reply_text(f"{msg}\n\nContinuando setup...", parse_mode="HTML")
+        
+        # Vai para próximo passo
+        await setup_passo3_callback(update, context)
+        return True
+        
+    except Exception:
+                await update.message.reply_text(
+            "❌ <b>Formato inválido!</b>\n\n"
+            "📝 <b>Formatos aceitos:</b>\n"
+            "• <code>0.05</code> → 5% ou mais\n"
+            "• <code>0.03 0.12</code> → 3% até 12%\n\n"
+            "👉 Use valores entre 0.01 e 10.0",
+            parse_mode="HTML"
+        )
+        return True
+
+async def processar_setup_horario_manual(update, context):
+    """Processa horário manual durante setup"""
+    try:
+        entrada = update.message.text.strip()
+        partes = entrada.split()
+        
+        if len(partes) != 2:
+            raise ValueError("Formato inválido")
+        
+        inicio, fim = partes
+        datetime.strptime(inicio, "%H:%M")
+        datetime.strptime(fim, "%H:%M")
+        
+        chat_id = str(update.effective_chat.id)
+        filtros_por_chat.setdefault(chat_id, {})["horario_inicio"] = inicio
+        filtros_por_chat[chat_id]["horario_fim"] = fim
+        salvar_filtros()
+        
+        context.user_data["setup_esperando_horario"] = False
+        
+        await update.message.reply_text(
+            f"✅ <b>Horário configurado: {inicio} às {fim}</b>\n\n"
+            "Finalizando setup...",
+            parse_mode="HTML"
+        )
+        
+        # Vai para finalização
+        await setup_finalizar_callback(update, context)
+        return True
+        
+    except:
+        await update.message.reply_text(
+            "❌ <b>Formato inválido!</b>\n\n"
+            "Use: <code>HH:MM HH:MM</code>\n"
+            "Exemplo: <code>19:00 23:00</code>",
+            parse_mode="HTML"
+        )
+        return True
+
+# Handlers para esportes checkbox
+async def esporte_toggle_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    esporte = query.data.split("|")[1]
+    selecao = context.user_data.get("esportes_selecao", {})
+    
+    if esporte in selecao["selecionados"]:
+        selecao["selecionados"].remove(esporte)
+    else:
+        selecao["selecionados"].add(esporte)
+    
+    keyboard = []
+    for esp in selecao["disponiveis"]:
+        marcado = "✅" if esp in selecao["selecionados"] else "☑️"
+        keyboard.append([InlineKeyboardButton(f"{marcado} {esp}", callback_data=f"esporte_toggle|{esp}")])
+    
+    keyboard.append([InlineKeyboardButton("💾 Salvar Seleção", callback_data="esporte_salvar")])
+    keyboard.append([InlineKeyboardButton("🔙 Voltar", callback_data="escolher_esportes")])
+    
+    await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def esporte_salvar_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+    
+    selecao = context.user_data.get("esportes_selecao", {})
+    esportes_final = list(selecao["selecionados"]) if selecao["selecionados"] else None
+    
+    filtros_por_chat.setdefault(chat_id, {})["esportes"] = esportes_final
+    salvar_filtros()
+    
+    if esportes_final:
+        msg = f"✅ Esportes configurados: {', '.join(esportes_final)}"
+    else:
+        msg = "✅ Todos os esportes habilitados"
+    
+    await query.edit_message_text(msg)
+
+# Handlers para regiões checkbox  
+async def regiao_toggle_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    regiao = query.data.split("|")[1]
+    selecao = context.user_data.get("regioes_selecao", {})
+    
+    if regiao in selecao["selecionadas"]:
+        selecao["selecionadas"].remove(regiao)
+    else:
+        selecao["selecionadas"].add(regiao)
+    
+    keyboard = []
+    for reg in selecao["disponiveis"]:
+        marcado = "✅" if reg in selecao["selecionadas"] else "☑️"
+        keyboard.append([InlineKeyboardButton(f"{marcado} {reg}", callback_data=f"regiao_toggle|{reg}")])
+    
+    keyboard.append([InlineKeyboardButton("💾 Aplicar Seleção", callback_data="regiao_salvar")])
+    keyboard.append([InlineKeyboardButton("🔙 Voltar", callback_data="escolher_ligas_visual")])
+    
+    await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def regiao_salvar_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+    
+    selecao = context.user_data.get("regioes_selecao", {})
+    catalogo = carregar_catalogo_ligas()
+    
+    ligas_final = []
+    for regiao in selecao["selecionadas"]:
+        ligas_final.extend(catalogo.get(regiao, {}).get("Football", []))
+    
+    filtros_por_chat.setdefault(chat_id, {})["ligas"] = ligas_final if ligas_final else None
+    salvar_filtros()
+    
+    if ligas_final:
+        msg = f"✅ Regiões configuradas: {', '.join(selecao['selecionadas'])}\n{len(ligas_final)} ligas ativadas"
+    else:
+        msg = "✅ Todas as ligas habilitadas"
+    
+    await query.edit_message_text(msg)
+
+# Comando /admin
+async def admin_handler(update, context):
+    chat_id = str(update.effective_chat.id)
+    
+    if not is_admin(chat_id):
+        await update.message.reply_text("❌ Acesso negado. Apenas administradores podem usar este comando.")
+        return
+    
+    # Estatísticas do sistema
+    stats_api = api_rate_limiter.get_stats()
+    status_api = get_odds_api_status()
+    usuarios_ativos = len(filtros_por_chat.keys())
+    
+    # Contagem de alertas hoje
+    total_alertas_hoje = _count_alerts_on_date(date.today())
+    
+    status_icone = "✅" if status_api.get("ok") else "❌"
+    status_msg = status_api.get("mensagem", "Desconhecido")
+    status_detalhes = status_api.get("detalhes")
+    atualizado_em = status_api.get("atualizado_em")
+    if atualizado_em:
+        try:
+            atualizado_em_fmt = datetime.fromisoformat(atualizado_em).astimezone().strftime("%d/%m/%Y %H:%M:%S")
+        except ValueError:
+            atualizado_em_fmt = atualizado_em
+    else:
+        atualizado_em_fmt = datetime.now().strftime("%H:%M:%S")
+
+    msg = f"""
+🔧 <b>Painel de Administração</b>
+
+📊 <b>Status da API:</b>
+• Usage: {stats_api['usage_percent']:.1f}% ({stats_api['requests_used']}/{stats_api['requests_max']})
+• Requests restantes: {stats_api['requests_remaining']}
+• Status: {status_msg} {status_icone}
+"""
+
+    if status_detalhes:
+        msg += f"• Detalhes: {status_detalhes}\n"
+
+    msg += f"""
+
+👥 <b>Usuários:</b>
+• Usuários ativos: {usuarios_ativos}
+• Alertas enviados hoje: {total_alertas_hoje}
+
+⚙️ <b>Sistema:</b>
+• Última atualização: {atualizado_em_fmt}
+
+<b>Comandos disponíveis:</b>
+/admin_users - Ver lista de usuários
+/admin_stats - Estatísticas detalhadas
+/admin_broadcast - Enviar mensagem para todos
+"""
+    
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+# Comando para listar usuários
+async def admin_users_handler(update, context):
+    chat_id = str(update.effective_chat.id)
+    
+    if not is_admin(chat_id):
+        await update.message.reply_text("❌ Acesso negado.")
+        return
+    
+    if not filtros_por_chat:
+        await update.message.reply_text("🔭 Nenhum usuário cadastrado.")
+            return
+        
+    msg = "👥 <b>Usuários Ativos:</b>\n\n"
+    
+    for i, (user_chat_id, filtros) in enumerate(filtros_por_chat.items(), 1):
+        # Contar alertas do usuário
+        total_alertas = _count_user_alerts(user_chat_id)
+
+        # Bookmakers do usuário
+        bookmakers = filtros.get("bookmakers", [filtros.get("bookmaker", "Bet365")])
+        if isinstance(bookmakers, str):
+            bookmakers = [bookmakers]
+
+        nome = filtros.get("nome")
+        username = filtros.get("username")
+        nome_formatado = html.escape(nome) if nome else None
+        username_limpo = username.lstrip("@") if username else None
+        username_formatado = html.escape(username_limpo) if username_limpo else None
+
+        if nome_formatado and username_formatado:
+            identificacao = f"{nome_formatado} (@{username_formatado})"
+        elif nome_formatado:
+            identificacao = nome_formatado
+        elif username_formatado:
+            identificacao = f"@{username_formatado}"
+        else:
+            identificacao = "Usuário sem nome"
+
+        msg += f"<b>{i}.</b> {identificacao} — Chat ID: <code>{user_chat_id}</code>\n"
+        msg += f"   • Bookmakers: {', '.join(bookmakers)}\n"
+        msg += f"   • Total alertas: {total_alertas}\n"
+        ligas_usuario = filtros.get("ligas")
+        if not ligas_usuario:
+            ligas_desc = "Todas"
+        else:
+            ligas_desc = f"{len(ligas_usuario)} definidas"
+        msg += f"   • Ligas: {ligas_desc}\n\n"
+    
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+# Comando para estatísticas detalhadas
+async def admin_stats_handler(update, context):
+    chat_id = str(update.effective_chat.id)
+    
+    if not is_admin(chat_id):
+        await update.message.reply_text("❌ Acesso negado.")
+        return
+    
+    # Análise dos arquivos de histórico
+    total_alertas = 0
+    usuarios_com_alertas = 0
+    bookmakers_usados = {}
+    
+    for user_chat_id in filtros_por_chat.keys():
+        alertas_usuario = _fetch_alert_history(user_chat_id)
+        if not alertas_usuario:
+            continue
+
+        usuarios_com_alertas += 1
+        total_alertas += len(alertas_usuario)
+
+        # Contar bookmakers
+        for alerta in alertas_usuario:
+            bk = alerta.get("bookmaker", "Desconhecido") or "Desconhecido"
+            bookmakers_usados[bk] = bookmakers_usados.get(bk, 0) + 1
+    
+    # Top 3 bookmakers
+    top_bookmakers = sorted(bookmakers_usados.items(), key=lambda x: x[1], reverse=True)[:3]
+    
+    msg = f"""
+📈 <b>Estatísticas Detalhadas</b>
+
+📊 <b>Alertas:</b>
+• Total de alertas enviados: {total_alertas}
+• Usuários com histórico: {usuarios_com_alertas}
+• Média por usuário ativo: {total_alertas/usuarios_com_alertas if usuarios_com_alertas > 0 else 0:.1f}
+
+🏢 <b>Bookmakers mais usados:</b>
+"""
+    
+    for i, (bk, count) in enumerate(top_bookmakers, 1):
+        msg += f"{i}. {bk}: {count} alertas\n"
+    
+    # Análise de arquivos do sistema
+    cache_entries = _count_api_cache_entries()
+    msg += "\n💾 <b>Sistema:</b>\n"
+    msg += f"• Registros em cache: {cache_entries}\n"
+    
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+# Comando para broadcast
+async def admin_broadcast_handler(update, context):
+    chat_id = str(update.effective_chat.id)
+    
+    if not is_admin(chat_id):
+        await update.message.reply_text("❌ Acesso negado.")
+        return
+    
+    if not context.args:
+            await update.message.reply_text(
+            "📢 <b>Uso:</b> <code>/admin_broadcast sua mensagem aqui</code>\n\n"
+            "Esta mensagem será enviada para todos os usuários ativos.",
+            parse_mode="HTML"
+        )
+        return
+    
+    mensagem = " ".join(context.args)
+    enviados = 0
+    falhas = 0
+    
+    await update.message.reply_text("📤 Enviando mensagem para todos os usuários...")
+    
+    for user_chat_id in filtros_por_chat.keys():
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+            params = {
+                "chat_id": user_chat_id,
+                "text": f"📢 <b>Mensagem do Administrador:</b>\n\n{mensagem}",
+                "parse_mode": "HTML"
+            }
+            
+            import requests
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                enviados += 1
+            else:
+                falhas += 1
+                
+        except Exception:
+            falhas += 1
+    
+    await update.message.reply_text(
+        f"✅ Broadcast concluído!\n"
+        f"• Enviados: {enviados}\n"
+        f"• Falhas: {falhas}"
+    )
+
+async def ligas_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    args = context.args
+
+    if not args:
+        await update.message.reply_text(
+            "Use: /ligas [região] [esporte (opcional)]\nExemplo: /ligas brasil\nOu: /ligas europa basquete"
+        )
+        return
+
+    regiao = args[0].capitalize()
+    esporte_pt = args[1].lower() if len(args) > 1 else "futebol"
+    esporte_en = TRADUCAO_ESPORTE_EN.get(esporte_pt, "Football")
+    catalogo = carregar_catalogo_ligas()
+    ligas = catalogo.get(regiao, {}).get(esporte_en, [])
+
+    if not ligas:
+        await update.message.reply_text(f"Nenhuma liga encontrada para {regiao} - {esporte_pt.title()}.")
+        return
+
+    # Armazena seleção temporária em context.user_data
+    context.user_data["ligas_selecao"] = {
+        "regiao": regiao,
+        "esporte": esporte_en,
+        "todas_ligas": ligas,
+        "selecionadas": set(ligas)  # default: todas marcadas
+    }
+
+    await update.message.reply_text(
+        f"Selecione as ligas de {regiao} - {esporte_pt.title()} que deseja ativar:",
+        reply_markup=gerar_botoes_ligas(ligas, set(ligas))
+    )
+
+async def ligas_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+    chat_id = str(query.message.chat_id)
+    data = query.data
+
+    filtros_usuario, _ = atualizar_info_usuario(chat_id, update.effective_user)
+
+    selecao = context.user_data.get("ligas_selecao")
+    if not selecao:
+        await query.edit_message_text("Sessão de seleção expirada. Use /ligas novamente.")
+        return
+
+    if data.startswith("liga_toggle|"):
+        liga = data.split("|", 1)[1]
+        if liga in selecao["selecionadas"]:
+            selecao["selecionadas"].remove(liga)
+        else:
+            selecao["selecionadas"].add(liga)
+        # Atualiza botões
+        await query.edit_message_reply_markup(reply_markup=gerar_botoes_ligas(selecao["todas_ligas"], selecao["selecionadas"]))
+    elif data == "liga_salvar":
+        filtros_usuario["ligas"] = sorted(selecao["selecionadas"])
+        filtros_usuario["esportes"] = None  # Ou mantenha esportes anteriores se quiser
+        salvar_filtros()
+        await query.edit_message_text(f"✅ Filtro atualizado! {len(selecao['selecionadas'])} ligas salvas.")
+        # Limpa a seleção do usuário
+        context.user_data.pop("ligas_selecao", None)
 
 async def escolher_bookmaker(update, context):
     chat_id = str(update.effective_chat.id)
@@ -844,7 +1546,7 @@ async def callback_bookmaker(update, context):
     query = update.callback_query
     await query.answer()
     chat_id = str(query.message.chat_id)
-    data = query.data
+        data = query.data
 
     if "bookmakers_lista" not in context.user_data:
         await query.edit_message_text("Sessão expirada. Use /bookmakers novamente.")
@@ -865,7 +1567,7 @@ async def callback_bookmaker(update, context):
         selecionados = context.user_data.get("bookmaker_selecionados", set())
         if escolhido in selecionados:
             selecionados.remove(escolhido)
-        else:
+            else:
             selecionados.add(escolhido)
         context.user_data["bookmaker_selecionados"] = selecionados
         await enviar_pagina_bookmakers(update, context)
@@ -878,7 +1580,7 @@ async def callback_bookmaker(update, context):
         # Verificar se está em modo setup
         if context.user_data.get("setup_mode"):
             context.user_data.pop("setup_mode", None)
-            await query.edit_message_text(
+        await query.edit_message_text(
                 f"✅ <b>Casas selecionadas:</b> {', '.join(selecionados)}\n\n"
                 "Continuando setup...",
                 parse_mode="HTML"
@@ -889,74 +1591,455 @@ async def callback_bookmaker(update, context):
             # Modo normal
             await query.edit_message_text(f"✅ Casas de aposta salvas: {', '.join(selecionados)}")
 
-# ===== PROCESSAMENTO DE INPUT MANUAL =====
+# ===== FILTROS DE DATA =====
+async def filtros_data_handler(update, context):
+    """Menu para configurar filtros de data"""
+    keyboard = [
+        [InlineKeyboardButton("📅 Próximos 3 dias", callback_data="data_dinamica|3")],
+        [InlineKeyboardButton("📅 Próximos 7 dias", callback_data="data_dinamica|7")],
+        [InlineKeyboardButton("📅 Próximos 15 dias", callback_data="data_dinamica|15")],
+        [InlineKeyboardButton("📅 Próximos 30 dias", callback_data="data_dinamica|30")],
+        [InlineKeyboardButton("🗓️ Período específico", callback_data="data_estatica")],
+        [InlineKeyboardButton("🧹 Remover filtro de data", callback_data="data_remover")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="reconfigurar")],
+    ]
+    
+    msg = (
+        "📅 <b>Filtro de Data dos Jogos</b>\n\n"
+        "🔄 <b>Dinâmico (recomendado):</b>\n"
+        "Sempre os próximos X dias a partir de hoje\n\n"
+        "⚠️ <b>Estático:</b>\n"
+        "Período fixo que expira\n\n"
+        "Escolha sua preferência:"
+    )
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
+        )
+    else:
+        await update.message.reply_text(
+            msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
+        )
 
-async def processar_setup_ev_manual(update, context):
-    """Processa EV manual durante setup - FAIXA MANUAL"""
+async def callback_data_dinamica(update, context):
+    """Configura filtro dinâmico"""
+    query = update.callback_query
+    await query.answer()
+    
+    dias = int(query.data.split("|")[1])
+    chat_id = str(query.message.chat_id)
+    
+    # Remove filtros estáticos e adiciona dinâmico
+    filtros_por_chat.setdefault(chat_id, {})
+    filtros_por_chat[chat_id].pop("data_inicio", None)
+    filtros_por_chat[chat_id].pop("data_fim", None)
+    filtros_por_chat[chat_id]["filtro_dias"] = dias
+    
+    salvar_filtros()
+    
+    hoje = datetime.now().date()
+    data_fim = hoje + timedelta(days=dias)
+            
+            await query.edit_message_text(
+        f"✅ <b>Filtro dinâmico configurado!</b>\n\n"
+        f"📅 Sempre os próximos {dias} dias\n"
+        f"🔄 Hoje até {data_fim.strftime('%d/%m/%Y')}\n\n"
+        f"💡 <i>Se atualiza automaticamente todos os dias!</i>",
+        parse_mode="HTML"
+    )
+
+async def callback_data_estatica(update, context):
+    """Ativa modo de entrada manual de data"""
+    query = update.callback_query
+    await query.answer()
+    
+    context.user_data["esperando_data_estatica"] = True
+    
+    await query.edit_message_text(
+        "🗓️ <b>Período Específico</b>\n\n"
+        "Envie as datas no formato:\n"
+        "<code>DD/MM/AAAA DD/MM/AAAA</code>\n\n"
+        "📝 <b>Exemplos:</b>\n"
+        "• <code>25/09/2025 30/09/2025</code>\n"
+        "• <code>01/10/2025 15/10/2025</code>\n\n"
+        "⚠️ <i>Filtro estático expira nas datas definidas</i>",
+        parse_mode="HTML"
+    )
+
+async def callback_data_remover(update, context):
+    """Remove filtros de data"""
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+    
+    filtros_por_chat.setdefault(chat_id, {})
+    filtros_por_chat[chat_id].pop("data_inicio", None)
+    filtros_por_chat[chat_id].pop("data_fim", None)
+    filtros_por_chat[chat_id].pop("filtro_dias", None)
+    
+    salvar_filtros()
+            
+            await query.edit_message_text(
+        "🧹 <b>Filtro de data removido!</b>\n\n"
+        "Agora você receberá alertas de jogos em qualquer data.",
+        parse_mode="HTML"
+    )
+
+async def processar_data_estatica(update, context):
+    """Processa entrada manual de data estática"""
+    if not context.user_data.get("esperando_data_estatica"):
+        return False
+    
+    entrada = update.message.text.strip()
+    context.user_data["esperando_data_estatica"] = False
+    chat_id = str(update.effective_chat.id)
+    
     try:
-        entrada = update.message.text.strip()
+        # Espera formato "DD/MM/AAAA DD/MM/AAAA"
         partes = entrada.split()
-        
-        chat_id = str(update.effective_chat.id)
-        
-        if len(partes) == 1:
-            # Apenas mínimo: 0.05
-            ev_min = float(partes[0])
-            if ev_min < 0.01 or ev_min > 10.0:
-                raise ValueError("Fora do range")
-            
-            filtros_por_chat.setdefault(chat_id, {})["ev_faixa_min"] = ev_min
-            filtros_por_chat[chat_id]["ev_faixa_max"] = 9999.0  # Sem limite superior
-            msg = f"✅ <b>EV configurado: {ev_min*100:.1f}% ou mais</b>"
-            
-        elif len(partes) == 2:
-            # Faixa completa: 0.01 0.15
-            ev_min, ev_max = float(partes[0]), float(partes[1])
-            
-            if ev_min < 0.01 or ev_min > 10.0:
-                raise ValueError("Min fora do range")
-            if ev_max < ev_min or ev_max > 10.0:
-                raise ValueError("Max inválido")
-            
-            filtros_por_chat.setdefault(chat_id, {})["ev_faixa_min"] = ev_min
-            filtros_por_chat[chat_id]["ev_faixa_max"] = ev_max
-            msg = f"✅ <b>EV configurado: {ev_min*100:.1f}% até {ev_max*100:.1f}%</b>"
-            
-        else:
+        if len(partes) != 2:
             raise ValueError("Formato inválido")
         
+        data_inicio_str, data_fim_str = partes
+        
+        # Validar e converter datas
+        data_inicio = datetime.strptime(data_inicio_str, "%d/%m/%Y").date()
+        data_fim = datetime.strptime(data_fim_str, "%d/%m/%Y").date()
+        
+        if data_inicio > data_fim:
+            raise ValueError("Data início deve ser anterior à data fim")
+        
+        # Converter para formato ISO (YYYY-MM-DD) para salvar
+        data_inicio_iso = data_inicio.strftime("%Y-%m-%d")
+        data_fim_iso = data_fim.strftime("%Y-%m-%d")
+        
+        # Salvar
+        filtros_por_chat.setdefault(chat_id, {})
+        filtros_por_chat[chat_id].pop("filtro_dias", None)  # Remove dinâmico
+        filtros_por_chat[chat_id]["data_inicio"] = data_inicio_iso
+        filtros_por_chat[chat_id]["data_fim"] = data_fim_iso
         salvar_filtros()
-        context.user_data["setup_esperando_ev"] = False
         
-        await update.message.reply_text(f"{msg}\n\nContinuando setup...", parse_mode="HTML")
+        diferenca_dias = (data_fim - data_inicio).days + 1
         
-        # Vai para próximo passo
-        await setup_passo3_callback(update, context)
+        await update.message.reply_text(
+            f"✅ <b>Período específico configurado!</b>\n\n"
+            f"📅 <b>De:</b> {data_inicio_str}\n"
+            f"📅 <b>Até:</b> {data_fim_str}\n"
+            f"📊 <b>Total:</b> {diferenca_dias} dias\n\n"
+            f"⚠️ <i>Filtro estático - expira após as datas</i>",
+            parse_mode="HTML"
+        )
         return True
         
     except Exception:
         await update.message.reply_text(
             "❌ <b>Formato inválido!</b>\n\n"
-            "📝 <b>Formatos aceitos:</b>\n"
-            "• <code>0.05</code> → 5% ou mais\n"
-            "• <code>0.03 0.12</code> → 3% até 12%\n\n"
-            "👉 Use valores entre 0.01 e 10.0",
+            "Use o formato: <code>DD/MM/AAAA DD/MM/AAAA</code>\n\n"
+            "📝 <b>Exemplo correto:</b>\n"
+            "<code>25/09/2025 30/09/2025</code>",
             parse_mode="HTML"
         )
         return True
+
+# ===== FILTROS DE HORÁRIO =====
+async def filtros_horario_handler(update, context):
+    """Menu para configurar filtros de horário"""
+    chat_id = str(update.effective_chat.id if update.callback_query else update.effective_chat.id)
+    filtros = filtros_por_chat.get(chat_id, {})
+    
+    horario_atual = ""
+    h_ini = filtros.get("horario_inicio")
+    h_fim = filtros.get("horario_fim")
+    if h_ini and h_fim:
+        horario_atual = f"\n🕐 <b>Atual:</b> {h_ini} às {h_fim}"
+    
+    keyboard = [
+        [InlineKeyboardButton("🌅 Manhã (06:00-12:00)", callback_data="horario_preset|06:00|12:00")],
+        [InlineKeyboardButton("☀️ Tarde (12:00-18:00)", callback_data="horario_preset|12:00|18:00")],
+        [InlineKeyboardButton("🌆 Noite (18:00-23:59)", callback_data="horario_preset|18:00|23:59")],
+        [InlineKeyboardButton("🌙 Madrugada (00:00-06:00)", callback_data="horario_preset|00:00|06:00")],
+        [InlineKeyboardButton("🏢 Comercial (08:00-18:00)", callback_data="horario_preset|08:00|18:00")],
+        [InlineKeyboardButton("⚽ Futebol BR (19:00-23:00)", callback_data="horario_preset|19:00|23:00")],
+        [InlineKeyboardButton("⚙️ Horário personalizado", callback_data="horario_custom")],
+        [InlineKeyboardButton("🧹 Remover filtro", callback_data="horario_remover")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="reconfigurar")],
+    ]
+    
+    msg = (
+        f"🕐 <b>Filtro de Horário dos Jogos</b>{horario_atual}\n\n"
+        "Escolha apenas jogos que começam dentro do horário desejado:\n\n"
+        "💡 <i>Horário baseado no fuso do Brasil (UTC-3)</i>"
+    )
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
+        )
+    else:
+        await update.message.reply_text(
+            msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
+        )
+
+async def callback_horario_preset(update, context):
+    """Aplica horário pré-definido"""
+    query = update.callback_query
+    await query.answer()
+    
+    _, inicio, fim = query.data.split("|")
+    chat_id = str(query.message.chat_id)
+    
+    filtros_por_chat.setdefault(chat_id, {})
+    filtros_por_chat[chat_id]["horario_inicio"] = inicio
+    filtros_por_chat[chat_id]["horario_fim"] = fim
+    
+    salvar_filtros()
+    
+    # Determinar nome do período
+    nome_periodo = {
+        ("06:00", "12:00"): "Manhã",
+        ("12:00", "18:00"): "Tarde", 
+        ("18:00", "23:59"): "Noite",
+        ("00:00", "06:00"): "Madrugada",
+        ("08:00", "18:00"): "Comercial",
+        ("19:00", "23:00"): "Futebol BR"
+    }.get((inicio, fim), "Personalizado")
+    
+                await query.edit_message_text(
+        f"✅ <b>Filtro de horário configurado!</b>\n\n"
+        f"🕐 <b>Período:</b> {nome_periodo}\n"
+        f"⏰ <b>Horário:</b> {inicio} às {fim}\n\n"
+        f"🎯 Você receberá alertas apenas de jogos que começam neste horário.",
+        parse_mode="HTML"
+    )
+
+async def callback_horario_custom(update, context):
+    """Ativa modo de entrada manual de horário"""
+    query = update.callback_query
+    await query.answer()
+    
+    context.user_data["esperando_horario_custom"] = True
+            
+            await query.edit_message_text(
+        "⚙️ <b>Horário Personalizado</b>\n\n"
+        "Envie o horário no formato:\n"
+        "<code>HH:MM HH:MM</code>\n\n"
+        "📝 <b>Exemplos:</b>\n"
+        "• <code>14:00 22:30</code> → 14h às 22h30\n"
+        "• <code>09:15 17:45</code> → 9h15 às 17h45\n"
+        "• <code>20:00 02:00</code> → 20h às 2h (cruza meia-noite)\n\n"
+        "💡 Use formato 24h (00:00 até 23:59)",
+        parse_mode="HTML"
+    )
+
+async def callback_horario_remover(update, context):
+    """Remove filtros de horário"""
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+    
+    filtros_por_chat.setdefault(chat_id, {})
+    filtros_por_chat[chat_id].pop("horario_inicio", None)
+    filtros_por_chat[chat_id].pop("horario_fim", None)
+    
+    salvar_filtros()
+    
+    await query.edit_message_text(
+        "🧹 <b>Filtro de horário removido!</b>\n\n"
+        "Agora você receberá alertas de jogos em qualquer horário.",
+        parse_mode="HTML"
+    )
+
+async def processar_horario_custom(update, context):
+    """Processa entrada manual de horário"""
+    if not context.user_data.get("esperando_horario_custom"):
+        return False
+    
+    entrada = update.message.text.strip()
+    context.user_data["esperando_horario_custom"] = False
+    chat_id = str(update.effective_chat.id)
+    
+    try:
+        # Espera formato "HH:MM HH:MM"
+        partes = entrada.split()
+        if len(partes) != 2:
+            raise ValueError("Formato inválido")
+        
+        inicio, fim = partes
+        
+        # Validar formato HH:MM
+        datetime.strptime(inicio, "%H:%M")
+        datetime.strptime(fim, "%H:%M")
+        
+        # Salvar
+        filtros_por_chat.setdefault(chat_id, {})
+        filtros_por_chat[chat_id]["horario_inicio"] = inicio
+        filtros_por_chat[chat_id]["horario_fim"] = fim
+        salvar_filtros()
+        
+        # Determinar se cruza meia-noite
+        cruza_meia_noite = inicio > fim
+        nota_extra = "\n\n🌙 <i>Horário cruza a meia-noite</i>" if cruza_meia_noite else ""
+        
+        await update.message.reply_text(
+            f"✅ <b>Horário personalizado configurado!</b>\n\n"
+            f"⏰ <b>Das:</b> {inicio}\n"
+            f"⏰ <b>Até:</b> {fim}{nota_extra}",
+            parse_mode="HTML"
+        )
+        return True
+        
+    except Exception:
+                await update.message.reply_text(
+            "❌ <b>Formato inválido!</b>\n\n"
+            "Use o formato: <code>HH:MM HH:MM</code>\n\n"
+            "📝 <b>Exemplo correto:</b>\n"
+            "<code>14:30 22:00</code>",
+            parse_mode="HTML"
+        )
+        return True
+
+# ===== MENUS E CONFIGURAÇÕES =====
+
+async def reconfigurar_callback(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("🏠 Mudar Casas de Aposta", callback_data="reconfig_bookmakers")],
+        [InlineKeyboardButton("🏆 Escolher Ligas", callback_data="escolher_ligas_visual")],
+        [InlineKeyboardButton("📈 Alterar EV Mínimo", callback_data="ev_menu")],
+        [InlineKeyboardButton("🌍 Trocar Esportes/Regiões", callback_data="escolher_esportes")],
+        [InlineKeyboardButton("📅 Filtros de Data", callback_data="filtros_data")],
+        [InlineKeyboardButton("🕐 Filtros de Horário", callback_data="filtros_horario")],
+        [InlineKeyboardButton("🗑️ Limpar Filtros", callback_data="menu_limpar")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="start_inicial")],
+    ]
+    
+    await query.edit_message_text(
+        "⚙️ <b>Alterar Configurações</b>\n\nO que você quer modificar?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
+    )
+
+async def ev_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Menu de EV - VERSÃO CORRIGIDA"""
+    query = update.callback_query
+    await query.answer()
+
+    keyboard = [
+        [InlineKeyboardButton("✏️ Configurar EV", callback_data="ev_custom")],
+        [InlineKeyboardButton("🧹 Remover filtro de EV", callback_data="ev_remove")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="reconfigurar")],
+    ]
+
+    await query.edit_message_text(
+        "📈 <b>Configuração de EV</b>\n\n"
+        "Configure o valor esperado mínimo (ou faixa) para receber alertas.\n\n"
+        "📝 <b>Opções:</b>\n"
+        "• Apenas mínimo: <code>0.05</code>\n"
+        "• Faixa completa: <code>0.03 0.12</code>\n\n"
+        "💡 <b>Dica:</b> Comece com 5% ou 8%",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
+    )
+
+async def ev_custom_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """EV personalizado - VERSÃO CORRIGIDA (igual sua foto)"""
+    query = update.callback_query
+    await query.answer()
+    context.user_data["esperando_ev_manual"] = True
+    await query.edit_message_text(
+        "📈 <b>Configuração de EV</b>\n\n"
+        "✏️ <b>Envie sua configuração de EV:</b>\n\n"
+        "• <b>Apenas mínimo:</b> <code>0.01</code> (1% ou mais)\n"
+        "• <b>Faixa completa:</b> <code>0.01 0.15</code> (1% até 15%)\n"
+        "• <b>Sem limite superior:</b> basta mandar um valor (ex: <code>0.03</code>)\n\n"
+        "👉 <b>Use valores decimais, onde 0.05 = 5%</b>",
+        parse_mode="HTML"
+    )
 
 async def capturar_input_manual(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # NOVO: Verificar se está em setup
     if context.user_data.get("setup_esperando_ev"):
         return await processar_setup_ev_manual(update, context)
     
-    # Resposta padrão para mensagens não reconhecidas
-    await update.message.reply_text(
-        "🤖 Use /start para configurar o bot ou /ajuda para ver os comandos disponíveis."
-    )
+    if context.user_data.get("setup_esperando_horario"):
+        return await processar_setup_horario_manual(update, context)
+    
+    # Verificar se é horário customizado
+    if await processar_horario_custom(update, context):
+                return
+            
+    # Verificar se é data estática
+    if await processar_data_estatica(update, context):
+        return
+    
+    chat_id = str(update.effective_chat.id)
 
-# ===== CALLBACK HANDLER PRINCIPAL =====
+    # Caso EV manual - VERSÃO CORRIGIDA (com faixa)
+    if context.user_data.get("esperando_ev_manual"):
+        try:
+            entrada = update.message.text.strip()
+            partes = entrada.split()
+            
+            if len(partes) == 1:
+                # Apenas mínimo
+                ev_min = float(partes[0])
+                if ev_min < 0.01 or ev_min > 10.0:
+                    raise ValueError("Fora do range")
+                
+                filtros_por_chat.setdefault(chat_id, {})["ev_faixa_min"] = ev_min
+                filtros_por_chat[chat_id]["ev_faixa_max"] = 9999.0  # Sem limite superior
+                msg = f"✅ <b>EV configurado: {ev_min*100:.1f}% ou mais</b>"
+                
+            elif len(partes) == 2:
+                # Faixa completa
+                ev_min, ev_max = float(partes[0]), float(partes[1])
+                
+                if ev_min < 0.01 or ev_min > 10.0:
+                    raise ValueError("Min fora do range")
+                if ev_max < ev_min or ev_max > 10.0:
+                    raise ValueError("Max inválido")
+                
+                filtros_por_chat.setdefault(chat_id, {})["ev_faixa_min"] = ev_min
+                filtros_por_chat[chat_id]["ev_faixa_max"] = ev_max
+                msg = f"✅ <b>EV configurado: {ev_min*100:.1f}% até {ev_max*100:.1f}%</b>"
+                
+            else:
+                raise ValueError("Formato inválido")
+            
+            salvar_filtros()
+            context.user_data["esperando_ev_manual"] = False
+            await update.message.reply_text(msg, parse_mode="HTML")
+            return
+            
+        except Exception:
+            context.user_data["esperando_ev_manual"] = False
+            await update.message.reply_text(
+                "❌ <b>Formato inválido!</b>\n\n"
+                "📝 <b>Formatos aceitos:</b>\n"
+                "• <code>0.05</code> → 5% ou mais\n"
+                "• <code>0.03 0.12</code> → 3% até 12%\n\n"
+                "👉 Use valores entre 0.01 e 10.0",
+                parse_mode="HTML"
+            )
+            return
 
+async def ev_remove_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+
+    filtros_por_chat.setdefault(chat_id, {})
+    filtros_por_chat[chat_id].pop("ev_faixa_min", None)
+    filtros_por_chat[chat_id].pop("ev_faixa_max", None)
+    salvar_filtros()
+
+    await query.edit_message_text("🧹 <b>Filtro de EV removido!</b>\n\nVoltará ao padrão (≥ 5%).", parse_mode="HTML")
+
+# ----- Botões de resposta interativa -----
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -965,8 +2048,32 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filtros_usuario, _ = atualizar_info_usuario(chat_id, update.effective_user)
 
     data = query.data.lower()
+    catalogo = carregar_catalogo_ligas()
 
-    if data == "setup_passo1":
+    if data == "brasil":
+        ligas_brasil_atuais = catalogo.get("Brasil", {}).get("Football", [])
+        filtros_usuario["ligas"] = ligas_brasil_atuais
+        filtros_usuario["esportes"] = None
+        msg = "✅ Filtro ajustado para: 🇧🇷 Brasil (ligas dinâmicas da API)."
+
+    elif data == "europa":
+        ligas_europa_atuais = catalogo.get("Europa", {}).get("Football", [])
+        filtros_usuario["ligas"] = ligas_europa_atuais
+        filtros_usuario["esportes"] = None
+        msg = "✅ Filtro ajustado para: 🇪🇺 Europa (ligas dinâmicas da API)."
+
+    elif data == "americasul":
+        ligas_america_sul_atuais = catalogo.get("América do Sul", {}).get("Football", [])
+        filtros_usuario["ligas"] = ligas_america_sul_atuais
+        filtros_usuario["esportes"] = None
+        msg = "✅ Filtro ajustado para: 🌎 América do Sul (ligas dinâmicas da API)."
+
+    elif data == "todos":
+        filtros_usuario["ligas"] = None
+        filtros_usuario["esportes"] = None
+        msg = "✅ Filtro removido! Você receberá alertas de todas as ligas."
+
+    elif data == "setup_passo1":
         await setup_passo1_callback(update, context)
         return
     
@@ -1022,72 +2129,443 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await ver_historico_callback(update, context)
         return
 
+    elif data == "explicar_ligas_custom":
+        await explicar_ligas_custom_callback(update, context)
+        return
+
+    elif data == "setup_ligas_custom":
+        await setup_ligas_custom_callback(update, context)
+        return
+
+    elif data == "setup_horario_custom":
+        await setup_horario_custom_callback(update, context)
+        return
+
+    elif data == "reconfigurar":
+        await reconfigurar_callback(update, context)
+        return
+
+    elif data == "reconfig_bookmakers":
+        await escolher_bookmaker(update, context)
+        return
+
+    elif data == "ev_menu":
+        await ev_menu_handler(update, context)
+        return
+
+    elif data == "ev_custom":
+        await ev_custom_handler(update, context)
+        return
+
+    elif data == "ev_remove":
+        await ev_remove_handler(update, context)
+        return
+
+    elif data == "filtros_data":
+        await filtros_data_handler(update, context)
+        return
+
+    elif data.startswith("data_dinamica|"):
+        await callback_data_dinamica(update, context)
+        return
+
+    elif data == "data_estatica":
+        await callback_data_estatica(update, context)
+        return
+
+    elif data == "data_remover":
+        await callback_data_remover(update, context)
+        return
+
+    elif data == "filtros_horario":
+        await filtros_horario_handler(update, context)
+        return
+
+    elif data.startswith("horario_preset|"):
+        await callback_horario_preset(update, context)
+        return
+
+    elif data == "horario_custom":
+        await callback_horario_custom(update, context)
+        return
+
+    elif data == "horario_remover":
+        await callback_horario_remover(update, context)
+        return
+
+    elif data == "escolher_ligas_visual":
+        await escolher_ligas_visual_callback(update, context)
+        return
+
+    elif data == "escolher_esportes":
+        await escolher_esportes_callback(update, context)
+        return
+
+    elif data == "menu_limpar":
+        await menu_limpar_callback(update, context)
+        return
+    elif data == "explicar_esportes_comando":
+        await explicar_esportes_comando_callback(update, context)
+        return
+
+    elif data == "explicar_ligas_comando":
+        await explicar_ligas_comando_callback(update, context)
+        return
+
     else:
         msg = "❓ Opção não reconhecida."
 
     salvar_filtros()
     await query.edit_message_text(text=msg, parse_mode="HTML")
 
-# ===== COMANDOS ADMINISTRATIVOS =====
+    # ===== FUNÇÕES AUXILIARES FALTANTES =====
 
-async def admin_handler(update, context):
-    chat_id = str(update.effective_chat.id)
+async def escolher_ligas_visual_callback(update, context):
+    """Menu visual para escolha de ligas"""
+    query = update.callback_query
+    await query.answer()
     
-    if not is_admin(chat_id):
-        await update.message.reply_text("❌ Acesso negado. Apenas administradores podem usar este comando.")
-        return
+    keyboard = [
+        [InlineKeyboardButton("🇧🇷 Brasil", callback_data="brasil")],
+        [InlineKeyboardButton("🇪🇺 Europa", callback_data="europa")],
+        [InlineKeyboardButton("🌎 América do Sul", callback_data="americasul")],
+        [InlineKeyboardButton("🌍 Todas as Ligas", callback_data="todos")],
+        [InlineKeyboardButton("⚙️ Personalizar via /ligas", callback_data="explicar_ligas_comando")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="reconfigurar")],
+    ]
     
-    # Estatísticas do sistema
-    stats_api = api_rate_limiter.get_stats()
-    status_api = get_odds_api_status()
-    usuarios_ativos = len(filtros_por_chat.keys())
+    await query.edit_message_text(
+        "🏆 <b>Escolher Ligas</b>\n\n"
+        "Selecione as regiões que você quer monitorar:\n\n"
+        "🇧🇷 <b>Brasil:</b> Brasileirão, Copa do Brasil, etc.\n"
+        "🇪🇺 <b>Europa:</b> Premier League, La Liga, etc.\n"
+        "🌎 <b>América do Sul:</b> Libertadores, etc.\n"
+        "🌍 <b>Todas:</b> Monitoramento global\n\n"
+        "⚙️ Para seleção granular, use: <code>/ligas brasil futebol</code>",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
+    )
+
+async def escolher_esportes_callback(update, context):
+    """Menu para escolher esportes"""
+    query = update.callback_query
+    await query.answer()
     
-    # Contagem de alertas hoje
-    total_alertas_hoje = _count_alerts_on_date(date.today())
+    keyboard = [
+        [InlineKeyboardButton("⚽ Só Futebol", callback_data="esporte_futebol")],
+        [InlineKeyboardButton("🏀 Só Basquete", callback_data="esporte_basquete")],
+        [InlineKeyboardButton("🎾 Só Tênis", callback_data="esporte_tenis")],
+        [InlineKeyboardButton("🏈 Todos os Esportes", callback_data="esporte_todos")],
+        [InlineKeyboardButton("⚙️ Personalizar via /esportes", callback_data="explicar_esportes_comando")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="reconfigurar")],
+    ]
     
-    status_icone = "✅" if status_api.get("ok") else "❌"
-    status_msg = status_api.get("mensagem", "Desconhecido")
-    status_detalhes = status_api.get("detalhes")
-    atualizado_em = status_api.get("atualizado_em")
-    if atualizado_em:
-        try:
-            atualizado_em_fmt = datetime.fromisoformat(atualizado_em).astimezone().strftime("%d/%m/%Y %H:%M:%S")
-        except ValueError:
-            atualizado_em_fmt = atualizado_em
+    await query.edit_message_text(
+        "⚽ <b>Escolher Esportes</b>\n\n"
+        "Quais esportes você quer monitorar?\n\n"
+        "💡 Para seleção múltipla, use:\n"
+        "<code>/esportes futebol basquete tenis</code>",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
+    )
+
+async def menu_limpar_callback(update, context):
+    """Menu para limpar filtros"""
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("🧹 Limpar TUDO", callback_data="limpar_todos")],
+        [InlineKeyboardButton("📅 Só filtros de Data", callback_data="limpar_data")],
+        [InlineKeyboardButton("🕐 Só filtros de Horário", callback_data="limpar_horario")],
+        [InlineKeyboardButton("📈 Só filtros de EV", callback_data="limpar_ev")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="reconfigurar")],
+    ]
+    
+    await query.edit_message_text(
+        "🗑️ <b>Limpar Filtros</b>\n\n"
+        "⚠️ <b>Atenção:</b> Esta ação não pode ser desfeita!\n\n"
+        "O que você quer limpar?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
+    )
+
+async def explicar_ligas_comando_callback(update, context):
+    """Interface de checkbox para regiões"""
+    query = update.callback_query
+    await query.answer()
+    
+    regioes_disponiveis = ["Brasil", "Europa", "América do Sul", "Norte/Centro", "Ásia/Oceania", "Internacionais"]
+    
+    context.user_data["regioes_selecao"] = {
+        "disponiveis": regioes_disponiveis,
+        "selecionadas": set()
+    }
+    
+    keyboard = []
+    for regiao in regioes_disponiveis:
+        keyboard.append([InlineKeyboardButton(f"☑️ {regiao}", callback_data=f"regiao_toggle|{regiao}")])
+    
+    keyboard.append([InlineKeyboardButton("💾 Aplicar Seleção", callback_data="regiao_salvar")])
+    keyboard.append([InlineKeyboardButton("🔙 Voltar", callback_data="escolher_ligas_visual")])
+    
+    await query.edit_message_text(
+        "🏆 <b>Selecionar Regiões</b>\n\nMarque as regiões que quer monitorar:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
+    )
+
+async def explicar_esportes_comando_callback(update, context):
+    """Interface de checkbox para esportes - VERSÃO DINÂMICA"""
+    query = update.callback_query
+    await query.answer()
+    
+    # BUSCA ESPORTES DINAMICAMENTE DO CATÁLOGO DA API
+    catalogo = carregar_catalogo_ligas()
+    esportes_disponiveis = set()
+    
+    # Extrai todos os esportes únicos de todas as regiões
+    for regiao_data in catalogo.values():
+        if isinstance(regiao_data, dict):
+            esportes_disponiveis.update(regiao_data.keys())
+    
+    # Converte para lista ordenada, com fallback se catálogo vazio
+    if esportes_disponiveis:
+        esportes_disponiveis = sorted(list(esportes_disponiveis))
     else:
-        atualizado_em_fmt = datetime.now().strftime("%H:%M:%S")
-
-    msg = f"""
-🔧 <b>Painel de Administração</b>
-
-📊 <b>Status da API:</b>
-• Usage: {stats_api['usage_percent']:.1f}% ({stats_api['requests_used']}/{stats_api['requests_max']})
-• Requests restantes: {stats_api['requests_remaining']}
-• Status: {status_msg} {status_icone}
-"""
-
-    if status_detalhes:
-        msg += f"• Detalhes: {status_detalhes}\n"
-
-    msg += f"""
-
-👥 <b>Usuários:</b>
-• Usuários ativos: {usuarios_ativos}
-• Alertas enviados hoje: {total_alertas_hoje}
-
-⚙️ <b>Sistema:</b>
-• Última atualização: {atualizado_em_fmt}
-
-<b>Comandos disponíveis:</b>
-/admin_users - Ver lista de usuários
-/admin_stats - Estatísticas detalhadas
-/admin_broadcast - Enviar mensagem para todos
-"""
+        # Fallback caso catálogo ainda não exista
+        esportes_disponiveis = ["Football", "Basketball", "Tennis", "Baseball", "Hockey", "MMA", "Boxing", "Volleyball"]
     
-    await update.message.reply_text(msg, parse_mode="HTML")
+    chat_id = str(query.message.chat_id)
+    filtros = filtros_por_chat.get(chat_id, {})
+    esportes_selecionados = set(filtros.get("esportes", []))
+    
+    context.user_data["esportes_selecao"] = {
+        "disponiveis": esportes_disponiveis,
+        "selecionados": esportes_selecionados
+    }
+    
+    keyboard = []
+    for esporte in esportes_disponiveis:
+        marcado = "✅" if esporte in esportes_selecionados else "☑️"
+        keyboard.append([InlineKeyboardButton(f"{marcado} {esporte}", callback_data=f"esporte_toggle|{esporte}")])
+    
+    keyboard.append([InlineKeyboardButton("💾 Salvar Seleção", callback_data="esporte_salvar")])
+    keyboard.append([InlineKeyboardButton("🔙 Voltar", callback_data="escolher_esportes")])
+    
+    await query.edit_message_text(
+        f"⚽ <b>Selecionar Esportes</b>\n\nMarque os esportes que quer monitorar:\n\n<i>📊 {len(esportes_disponiveis)} esportes encontrados na API</i>",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
+    )
 
-# ===== COMANDOS BÁSICOS =====
+# Handlers para esportes individuais
+async def esporte_callback_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+    data = query.data
+    
+    esporte_map = {
+        "esporte_futebol": ["Football"],
+        "esporte_basquete": ["Basketball"],
+        "esporte_tenis": ["Tennis"],
+        "esporte_todos": None
+    }
+    
+    esportes = esporte_map.get(data)
+    filtros_por_chat.setdefault(chat_id, {})["esportes"] = esportes
+    salvar_filtros()
+    
+    if esportes:
+        msg = f"✅ Esporte configurado: {esportes[0]}"
+    else:
+        msg = "✅ Todos os esportes habilitados"
+    
+    await query.edit_message_text(msg)
 
+# Handlers para limpeza
+async def limpar_callback_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat_id)
+    data = query.data
+    
+    filtros_usuario = filtros_por_chat.setdefault(chat_id, {})
+    
+    if data == "limpar_todos":
+        # Preserva apenas as configurações mínimas obrigatórias
+        bookmakers = filtros_usuario.get("bookmakers", ["Bet365"])
+        ev_min = filtros_usuario.get("ev_faixa_min", 0.05)
+        nome = filtros_usuario.get("nome")
+        username = filtros_usuario.get("username")
+        
+        filtros_por_chat[chat_id] = {
+            "bookmakers": bookmakers,
+            "ev_faixa_min": ev_min,
+            "ligas": None,
+            "esportes": None
+        }
+        
+        if nome:
+            filtros_por_chat[chat_id]["nome"] = nome
+        if username:
+            filtros_por_chat[chat_id]["username"] = username
+            
+        msg = "🧹 <b>Todos os filtros limpos!</b>\n\nConfiguração resetada para o padrão."
+        
+    elif data == "limpar_data":
+        filtros_usuario.pop("data_inicio", None)
+        filtros_usuario.pop("data_fim", None)
+        filtros_usuario.pop("filtro_dias", None)
+        msg = "📅 Filtros de data removidos"
+        
+    elif data == "limpar_horario":
+        filtros_usuario.pop("horario_inicio", None)
+        filtros_usuario.pop("horario_fim", None)
+        msg = "🕐 Filtros de horário removidos"
+        
+    elif data == "limpar_ev":
+        filtros_usuario.pop("ev_faixa_min", None)
+        filtros_usuario.pop("ev_faixa_max", None)
+        msg = "📈 Filtros de EV removidos"
+    
+    salvar_filtros()
+    await query.edit_message_text(msg, parse_mode="HTML")
+
+# ----- Filtros por região -----
+async def set_brasil(update, context):
+    chat_id = str(update.effective_chat.id)
+    filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
+
+    catalogo = carregar_catalogo_ligas()
+    ligas_brasil_atuais = catalogo.get("Brasil", {}).get("Football", [])
+    filtros_por_chat[chat_id]["ligas"] = ligas_brasil_atuais
+
+    salvar_filtros()
+    await update.message.reply_text("✅ Filtro ajustado para: 🇧🇷 Brasil (ligas dinâmicas da API).")
+
+async def set_americasul(update, context):
+    chat_id = str(update.effective_chat.id)
+    filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
+
+    catalogo = carregar_catalogo_ligas()
+    ligas_america_sul_atuais = catalogo.get("América do Sul", {}).get("Football", [])
+    filtros_por_chat[chat_id]["ligas"] = ligas_america_sul_atuais
+
+    salvar_filtros()
+    await update.message.reply_text("✅ Filtro ajustado para: 🌎 América do Sul (ligas dinâmicas da API).")
+
+async def set_europa(update, context):
+    chat_id = str(update.effective_chat.id)
+    filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
+
+    catalogo = carregar_catalogo_ligas()
+    ligas_europa_atuais = catalogo.get("Europa", {}).get("Football", [])
+    filtros_por_chat[chat_id]["ligas"] = ligas_europa_atuais
+
+    salvar_filtros()
+    await update.message.reply_text("✅ Filtro ajustado para: 🇪🇺 Europa (ligas dinâmicas da API).")
+
+async def set_escandinavo(update, context):
+    chat_id = str(update.effective_chat.id)
+    filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
+
+    catalogo = carregar_catalogo_ligas()
+    ligas_escandinavo_atuais = []
+    for regiao in ["Suécia", "Noruega", "Finlândia", "Dinamarca", "Islândia"]:
+        ligas_escandinavo_atuais += catalogo.get(regiao, {}).get("Football", [])
+    filtros_por_chat[chat_id]["ligas"] = ligas_escandinavo_atuais
+
+    salvar_filtros()
+    await update.message.reply_text("✅ Filtro ajustado para: ❄️ Escandinávia (ligas dinâmicas da API).")
+
+async def set_norte_centro(update, context):
+    chat_id = str(update.effective_chat.id)
+    filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
+
+    catalogo = carregar_catalogo_ligas()
+    ligas_norte_centro_atuais = catalogo.get("Norte/Centro", {}).get("Football", [])
+    filtros_por_chat[chat_id]["ligas"] = ligas_norte_centro_atuais
+
+    salvar_filtros()
+    await update.message.reply_text("✅ Filtro ajustado para: 🇺🇸 América do Norte/Centro (ligas dinâmicas da API).")
+
+async def set_asia(update, context):
+    chat_id = str(update.effective_chat.id)
+    filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
+
+    catalogo = carregar_catalogo_ligas()
+    ligas_asia_atuais = catalogo.get("Ásia/Oceania", {}).get("Football", [])
+    filtros_por_chat[chat_id]["ligas"] = ligas_asia_atuais
+
+    salvar_filtros()
+    await update.message.reply_text("✅ Filtro ajustado para: 🌏 Ásia/Oceania (ligas dinâmicas da API).")
+
+async def set_feminino(update, context):
+    chat_id = str(update.effective_chat.id)
+    filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
+
+    catalogo = carregar_catalogo_ligas()
+    ligas_femininas_atuais = []
+    # Futebol feminino em todas as regiões
+    for regiao in catalogo:
+        ligas_femininas_atuais += [
+            liga for liga in catalogo[regiao].get("Football", []) if "Women" in liga
+        ]
+    filtros_por_chat[chat_id]["ligas"] = ligas_femininas_atuais
+
+    salvar_filtros()
+    await update.message.reply_text("✅ Filtro ajustado para: 👩‍🦰 Futebol Feminino (ligas dinâmicas da API).")
+
+async def set_internacionais(update, context):
+    chat_id = str(update.effective_chat.id)
+    filtros_por_chat.setdefault(chat_id, {"ligas": [], "esportes": None})
+
+    catalogo = carregar_catalogo_ligas()
+    ligas_internacionais_atuais = catalogo.get("Internacionais", {}).get("Football", [])
+    filtros_por_chat[chat_id]["ligas"] = ligas_internacionais_atuais
+
+    salvar_filtros()
+    await update.message.reply_text("✅ Filtro ajustado para: 🏆 Competições Internacionais (ligas dinâmicas da API).")
+
+async def set_todos(update, context):
+    chat_id = str(update.effective_chat.id)
+    filtros_usuario, _ = atualizar_info_usuario(chat_id, update.effective_user)
+    filtros_usuario["ligas"] = None
+    filtros_usuario["esportes"] = None
+    salvar_filtros()
+    await update.message.reply_text("Filtro removido. Você receberá alertas de todas as ligas.")
+
+# ----- Ver filtros -----
+async def ver_filtros(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    await ver_filtros_inline_detalhado(update, context, chat_id)
+
+# ----- Filtro por esportes -----
+ESPORTES_VALIDOS = {
+    "futebol": "Football", "tenis": "Tennis", "tênis": "Tennis",
+    "basquete": "Basketball", "beisebol": "Baseball", "hockey": "Hockey",
+    "mma": "MMA", "boxe": "Boxing", "volei": "Volleyball", "vôlei": "Volleyball"
+}
+
+async def set_esportes(update, context):
+    chat_id = str(update.effective_chat.id)
+    argumentos = context.args
+    if not argumentos:
+        await update.message.reply_text("❗ Use: /esportes futebol tenis basquete")
+        return
+
+    esportes = [ESPORTES_VALIDOS[arg.lower()] for arg in argumentos if arg.lower() in ESPORTES_VALIDOS]
+    if not esportes:
+        await update.message.reply_text("⚠️ Nenhum esporte reconhecido.")
+        return
+
+    filtros_por_chat.setdefault(chat_id, {})["esportes"] = esportes
+    salvar_filtros()
+    await update.message.reply_text(f"✅ Esportes configurados: {', '.join(esportes)}")
+
+# ----- /ajuda -----
 async def ajuda(update, context):
     msg = (
         "👋 <b>Bem-vindo ao Bot EV+</b>\n\n"
@@ -1114,6 +2592,7 @@ async def ajuda(update, context):
     )
     await update.message.reply_text(msg, parse_mode="HTML")
 
+# ----- /scan manual -----
 async def scan_handler(update, context):
     await update.message.reply_text("🔎 Iniciando scan manual...")
     chat_id = str(update.effective_chat.id)
@@ -1142,12 +2621,11 @@ async def stats_handler(update, context):
     
     await update.message.reply_text(msg)
 
-async def ver_filtros(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.effective_chat.id)
-    await ver_filtros_inline_detalhado(update, context, chat_id)
+# ----- Fallback para comandos inválidos -----
+async def fallback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❓ Comando não reconhecido. Digite /ajuda para ver as opções disponíveis.")
 
-# ===== INICIALIZAÇÃO DO BOT =====
-
+# ----- Inicializar bot -----
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
 # Comandos principais
@@ -1159,159 +2637,63 @@ app.add_handler(CommandHandler("stats", stats_handler))
 app.add_handler(CommandHandler("filtros", ver_filtros))
 app.add_handler(CommandHandler("bookmakers", escolher_bookmaker))
 app.add_handler(CallbackQueryHandler(callback_bookmaker, pattern="^bookmaker"))
+app.add_handler(CommandHandler("filtrosdata", filtros_data_handler))
+app.add_handler(CommandHandler("filtroshorario", filtros_horario_handler))
 app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), capturar_input_manual))
 
-# Comandos admin
+#Comandos admin
 app.add_handler(CommandHandler("admin", admin_handler))
+app.add_handler(CommandHandler("admin_users", admin_users_handler))
+app.add_handler(CommandHandler("admin_stats", admin_stats_handler))
+app.add_handler(CommandHandler("admin_broadcast", admin_broadcast_handler))
 
-# Callbacks principais
+# Comandos de filtro por região
+app.add_handler(CommandHandler("brasil", set_brasil))
+app.add_handler(CommandHandler("americasul", set_americasul))
+app.add_handler(CommandHandler("europa", set_europa))
+app.add_handler(CommandHandler("escandinavo", set_escandinavo))
+app.add_handler(CommandHandler("nortecentro", set_norte_centro))
+app.add_handler(CommandHandler("asia", set_asia))
+app.add_handler(CommandHandler("feminino", set_feminino))
+app.add_handler(CommandHandler("internacionais", set_internacionais))
+app.add_handler(CommandHandler("todos", set_todos))
+
+# Callbacks para interfaces de checkbox
+app.add_handler(CallbackQueryHandler(esporte_toggle_handler, pattern="^esporte_toggle\\|"))
+app.add_handler(CallbackQueryHandler(esporte_salvar_handler, pattern="^esporte_salvar$"))
+app.add_handler(CallbackQueryHandler(regiao_toggle_handler, pattern="^regiao_toggle\\|"))
+app.add_handler(CallbackQueryHandler(regiao_salvar_handler, pattern="^regiao_salvar$"))
+
+# Comando de filtro por esportes
+app.add_handler(CommandHandler("esportes", set_esportes))
+
+# Comando de personalização por ligas (com botões)
+app.add_handler(CommandHandler("ligas", ligas_handler))
+app.add_handler(CallbackQueryHandler(ligas_callback_handler, pattern="^liga_"))
+
+# Callbacks para filtros de data
+app.add_handler(CallbackQueryHandler(callback_data_dinamica, pattern="^data_dinamica\\|"))
+app.add_handler(CallbackQueryHandler(callback_data_estatica, pattern="^data_estatica$"))
+app.add_handler(CallbackQueryHandler(callback_data_remover, pattern="^data_remover$"))
+
+# Callbacks para filtros de horário
+app.add_handler(CallbackQueryHandler(callback_horario_preset, pattern="^horario_preset\\|"))
+app.add_handler(CallbackQueryHandler(callback_horario_custom, pattern="^horario_custom$"))
+app.add_handler(CallbackQueryHandler(callback_horario_remover, pattern="^horario_remover$"))
+
+# Callbacks para esportes
+app.add_handler(CallbackQueryHandler(esporte_callback_handler, pattern="^esporte_"))
+
+# Callbacks para limpeza
+app.add_handler(CallbackQueryHandler(limpar_callback_handler, pattern="^limpar_"))
+
+# Botões interativos das regiões (start e presets) - DEVE SER O ÚLTIMO
 app.add_handler(CallbackQueryHandler(callback_handler))
 
 # Comando inválido (fallback)
-app.add_handler(MessageHandler(filters.COMMAND, lambda update, context: update.message.reply_text("❓ Comando não reconhecido. Digite /ajuda para ver as opções disponíveis.")))
+app.add_handler(MessageHandler(filters.COMMAND, fallback_handler))
 
 if __name__ == "__main__":
     print("🚀 Bot EV+ iniciado!")
     print(f"📊 {len(filtros_por_chat)} usuários carregados")
     app.run_polling()
-    
-    keyboard = [
-        [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo1")],
-    ]
-    
-    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-
-async def setup_passo3_callback(update, context):
-    """Passo 3: Escolher regiões/ligas"""
-    query = update.callback_query
-    await query.answer()
-    
-    keyboard = [
-        [InlineKeyboardButton("🇧🇷 Brasil", callback_data="setup_regiao|brasil")],
-        [InlineKeyboardButton("🇪🇺 Europa", callback_data="setup_regiao|europa")],
-        [InlineKeyboardButton("🌎 América do Sul", callback_data="setup_regiao|americasul")],
-        [InlineKeyboardButton("🌍 Todas as Ligas", callback_data="setup_regiao|todas")],
-        [InlineKeyboardButton("⚙️ Personalizar Ligas", callback_data="setup_ligas_custom")],
-        [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo2")],
-    ]
-    
-    msg = (
-        "🌍 <b>Passo 3/4: Regiões de Interesse</b>\n\n"
-        "Escolha as regiões que você quer monitorar:\n\n"
-        "🇧🇷 <b>Brasil:</b> Brasileirão, Copa do Brasil, etc.\n"
-        "🇪🇺 <b>Europa:</b> Premier League, La Liga, etc.\n"
-        "🌎 <b>América do Sul:</b> Libertadores, etc.\n"
-        "🌍 <b>Todas:</b> Monitoramento global\n\n"
-        "💡 <b>Dica:</b> Comece com sua região principal"
-    )
-    
-    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-
-async def setup_regiao_callback(update, context):
-    """Processa seleção de região no setup"""
-    query = update.callback_query
-    await query.answer()
-    
-    regiao = query.data.split("|")[1]
-    chat_id = str(query.message.chat_id)
-    
-    # Aplica filtro de região usando lógica existente
-    catalogo = carregar_catalogo_ligas()
-    filtros_usuario = filtros_por_chat.setdefault(chat_id, {})
-    
-    if regiao == "brasil":
-        filtros_usuario["ligas"] = catalogo.get("Brasil", {}).get("Football", [])
-    elif regiao == "europa":
-        filtros_usuario["ligas"] = catalogo.get("Europa", {}).get("Football", [])
-    elif regiao == "americasul":
-        filtros_usuario["ligas"] = catalogo.get("América do Sul", {}).get("Football", [])
-    elif regiao == "todas":
-        filtros_usuario["ligas"] = None
-    
-    salvar_filtros()
-    
-    # Vai para passo final
-    await setup_passo4_callback(update, context)
-
-async def setup_passo4_callback(update, context):
-    """Passo 4: Configurações opcionais"""
-    query = update.callback_query
-    await query.answer()
-    
-    keyboard = [
-        [InlineKeyboardButton("🌆 Apenas Noite (19h-23h)", callback_data="setup_horario|19:00|23:00")],
-        [InlineKeyboardButton("☀️ Apenas Tarde (14h-18h)", callback_data="setup_horario|14:00|18:00")],
-        [InlineKeyboardButton("🕐 Personalizar Horário", callback_data="setup_horario_custom")],
-        [InlineKeyboardButton("⏭️ Pular (24h)", callback_data="setup_finalizar")],
-        [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo3")],
-    ]
-    
-    msg = (
-        "🕐 <b>Passo 4/4: Horários (Opcional)</b>\n\n"
-        "Quer receber alertas apenas em horários específicos?\n\n"
-        "🌆 <b>Noite:</b> Ideal para futebol brasileiro\n"
-        "☀️ <b>Tarde:</b> Ideal para futebol europeu\n"
-        "🕐 <b>Personalizar:</b> Defina seu horário\n"
-        "⏭️ <b>Pular:</b> Receber alertas 24h\n\n"
-        "💡 <b>Dica:</b> Você pode alterar depois"
-    )
-    
-    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-
-async def setup_horario_callback(update, context):
-    """Processa seleção de horário no setup"""
-    query = update.callback_query
-    await query.answer()
-    
-    _, inicio, fim = query.data.split("|")
-    chat_id = str(query.message.chat_id)
-    
-    # Salva horário
-    filtros_por_chat.setdefault(chat_id, {})["horario_inicio"] = inicio
-    filtros_por_chat[chat_id]["horario_fim"] = fim
-    salvar_filtros()
-    
-    # Finaliza setup
-    await setup_finalizar_callback(update, context)
-
-async def setup_finalizar_callback(update, context):
-    """Finaliza o setup e mostra resumo"""
-    query = update.callback_query
-    await query.answer()
-    
-    chat_id = str(query.message.chat_id)
-    filtros = filtros_por_chat.get(chat_id, {})
-    
-    # Gera resumo da configuração
-    bookmakers = filtros.get("bookmakers", ["Bet365"])
-    ev_min = filtros.get("ev_faixa_min", 0.05)
-    ev_max = filtros.get("ev_faixa_max")
-    ligas = filtros.get("ligas")
-    horario_inicio = filtros.get("horario_inicio")
-    horario_fim = filtros.get("horario_fim")
-    
-    # EV texto
-    if ev_max and ev_max < 99:
-        ev_texto = f"{ev_min*100:.1f}%-{ev_max*100:.1f}%"
-    else:
-        ev_texto = f"{ev_min*100:.1f}%+"
-    
-    keyboard = [
-        [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual_inline")],
-        [InlineKeyboardButton("⚙️ Ajustar Configurações", callback_data="reconfigurar")],
-        [InlineKeyboardButton("📊 Ver Filtros Completos", callback_data="ver_filtros_completos")],
-    ]
-    
-    msg = (
-        "🎉 <b>Configuração Concluída!</b>\n\n"
-        "✅ <b>Bot ativo e monitorando:</b>\n"
-        f"🏠 <b>Casas:</b> {', '.join(bookmakers[:2])}\n"
-        f"📈 <b>EV:</b> {ev_texto}\n"
-        f"🌍 <b>Ligas:</b> {'Personalizadas' if ligas else 'Todas'}\n"
-        f"🕐 <b>Horário:</b> {f'{horario_inicio}-{horario_fim}' if horario_inicio else '24h'}\n\n"
-        "🔔 <b>A partir de agora você receberá alertas automáticos!</b>\n\n"
-        "📡 <i>Monitoramento ativo a cada 5 minutos</i>\n"
-        "💡 <i>Use /start para gerenciar suas configurações</i>"
-    )
-    
-    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
