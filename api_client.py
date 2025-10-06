@@ -18,6 +18,10 @@ class OddsAPI:
         self.rate_limit = RATE_LIMIT_REQUESTS_PER_HOUR
         self.db = get_db()
         print(f"✅ API Client inicializada (key: {self.api_key[:8]}...)")
+        # Lista de bookmakers suportados pela integração atual
+        self.allowed_bookmakers = [
+            'Bet365', 'Betfair Sportsbook', 'Novibet', 'Superbet', 'Betano'
+        ]
     
     def _check_rate_limit(self) -> bool:
         """Verifica se pode fazer requisição sem exceder rate limit"""
@@ -36,46 +40,86 @@ class OddsAPI:
             return None
     
     def __parse_evento(self, bet):
-        """Parse de um evento da API para formato interno"""
         try:
             bookmaker = bet.get('bookmaker', '')
-            market = bet.get('market', {})
-            bookmaker_odds = bet.get('bookmakerOdds', {})
+            odds = bet.get('bookmakerOdds', {})
             bet_side = bet.get('betSide', '').lower()
+            market_name = bet.get('market', {}).get('name', '').lower()
 
-            # Odd do lado da aposta
-            odd_bet = self._parse_float(bookmaker_odds.get(bet_side))
+            if bet_side not in odds:
+                return None
+
+            odd_bet = self._parse_float(odds.get(bet_side))
             if not odd_bet or odd_bet < 1.50:
                 return None
 
-            # EV já vem calculado: 101.84 = 1.84% EV
-            # Converter: 101.84 -> 0.0184
-            expected_value_raw = bet.get('expectedValue', 0)
-            ev = (expected_value_raw - 100) / 100
+            # Mapeia bet_side para nome do time ou jogador
+            home_team = bet['event'].get('home', '')
+            away_team = bet['event'].get('away', '')
+            
+            # Para player props, extrai o nome do jogador
+            if 'player props' in market_name or 'player' in market_name:
+                # Tenta extrair nome do jogador do market name
+                player_name = self._extract_player_name(market_name, bet)
+                bet_side_display = player_name if player_name else bet_side.title()
+            else:
+                # Para mercados normais, usa nome do time
+                if bet_side == 'home':
+                    bet_side_display = home_team
+                elif bet_side == 'away':
+                    bet_side_display = away_team
+                else:
+                    bet_side_display = bet_side.title()
+
+            # Mapeia market para market_type
+            market_type = self._map_market_type(market_name)
 
             return {
-                "home": f"Event {bet.get('eventId', '')}",
-                "away": "",
-                "league": "Unknown",
-                "commence_time": bet.get('expectedValueUpdatedAt', ''),
+                "home": home_team,
+                "away": away_team,
+                "league": bet['event'].get('league', ''),
+                "commence_time": bet['event'].get('date', ''),
                 "id": bet.get('eventId', bet.get('id', '')),
-                "sport": "Unknown",
-                "market_type": market.get('name', ''),
-                "market_name": market.get('name', ''),
-                "bet_side": bet_side,
+                "sport": bet['event'].get('sport', ''),
+                "market_name": market_name,
+                "market_type": market_type,
+                "bet_side": bet_side_display,
                 "bet365_odds": odd_bet,
-                "odds_home": self._parse_float(market.get('home', 0)) or 0.0,
-                "odds_away": self._parse_float(market.get('away', 0)) or 0.0,
-                "odds_draw": self._parse_float(market.get('draw', 0)) or 0.0,
-                "hdp": market.get('hdp'),
-                "total": market.get('total'),
-                "ev": ev,
-                "event_url": bookmaker_odds.get('href', ''),
-                "bookmaker": bookmaker
+                "odds_home": self._parse_float(odds.get('home', 0.0)) or 0.0,
+                "odds_away": self._parse_float(odds.get('away', 0.0)) or 0.0,
+                "odds_draw": self._parse_float(odds.get('draw', 0.0)) or 0.0,
+                "hdp": bet.get('market', {}).get('hdp'),
+                "total": bet.get('market', {}).get('total'),
+                "ev": (bet.get('expectedValue', 0) / 100) - 1,
+                "event_url": odds.get('href', ''),
+                "bookmaker": bookmaker,
+                "raw_bet": bet  # Mantém dados originais para player props
             }
         except Exception as e:
             print(f"Erro ao processar aposta: {e}")
             return None
+
+    def _extract_player_name(self, market_name: str, bet: dict) -> str:
+        """
+        Extrai nome do jogador de player props
+        """
+        try:
+            # Tenta extrair do market name
+            if ' - ' in market_name:
+                parts = market_name.split(' - ')
+                if len(parts) > 1:
+                    player_part = parts[1]
+                    # Remove parênteses e conteúdo dentro
+                    player_name = player_part.split('(')[0].strip()
+                    return player_name.title()
+            
+            # Fallback: tenta extrair de outros campos
+            if 'player' in bet:
+                return bet['player'].title()
+            
+            return ""
+        except Exception:
+            return ""
     
     async def get_value_bets(self, bookmakers: List[str]) -> List[Dict]:
         """Busca apostas com valor (EV+) para bookmakers específicos"""
@@ -83,9 +127,17 @@ class OddsAPI:
             print("Rate limit atingido, aguardando...")
             return []
         
-        # Garantir que sempre tem pelo menos um bookmaker
-        if not bookmakers:
-            bookmakers = ['Bet365']  # Fallback padrão
+        # Normaliza input: aceita string única com vírgulas ou lista; filtra inválidos e remove duplicatas
+        if isinstance(bookmakers, str):
+            bookmakers = [b.strip() for b in bookmakers.split(',') if b.strip()]
+        bookmakers = list(dict.fromkeys(bookmakers or []))  # de-dup preservando ordem
+
+        # Remove entradas não suportadas (ex.: 'Stake.bet.br') e quaisquer inválidas
+        valid_bookmakers = [b for b in bookmakers if b in self.allowed_bookmakers]
+
+        # Fallback se vazio após validação
+        if not valid_bookmakers:
+            valid_bookmakers = ['Bet365']
         
         try:
             self._log_request()
@@ -93,7 +145,8 @@ class OddsAPI:
             url = f"{self.base_url}/value-bets"
             params = {
                 'apiKey': self.api_key,
-                'bookmaker': ','.join(bookmakers)  # ✅ OBRIGATÓRIO
+                'bookmaker': ','.join(valid_bookmakers),  # ✅ OBRIGATÓRIO
+                'includeEventDetails': 'true'
             }
             
             async with aiohttp.ClientSession() as session:
@@ -150,13 +203,19 @@ class OddsAPI:
             print("Rate limit atingido, aguardando...")
             return []
         
+        # Validação do bookmaker individual
+        if bookmaker not in self.allowed_bookmakers:
+            print(f"Bookmaker '{bookmaker}' não suportado, ignorando...")
+            return []
+
         try:
             self._log_request()
             
             url = f"{self.base_url}/value-bets"
             params = {
                 'apiKey': self.api_key,
-                'bookmaker': bookmaker  # ✅ OBRIGATÓRIO
+                'bookmaker': bookmaker,  # ✅ OBRIGATÓRIO
+                'includeEventDetails': 'true'
             }
             
             async with aiohttp.ClientSession() as session:
@@ -203,10 +262,7 @@ class OddsAPI:
                         data = await response.json()
                         # A API retorna esportes, vamos usar lista fixa dos principais bookmakers
                         # que sabemos que estão ativos na API
-                        bookmakers = [
-                            'Bet365', 'Betfair Sportsbook', 'Novibet', 
-                            'Stake.bet.br', 'Superbet', 'Betano'
-                        ]
+                        bookmakers = self.allowed_bookmakers.copy()
                         print(f"✅ API: {len(bookmakers)} bookmakers ativos encontrados")
                         return bookmakers
                     elif response.status == 401:
@@ -215,18 +271,12 @@ class OddsAPI:
                     else:
                         print(f"❌ Erro ao buscar bookmakers: {response.status}")
                         # Fallback para lista básica se o endpoint falhar
-                        return [
-                            'Bet365', 'Betfair Sportsbook', 'Novibet', 
-                            'Stake.bet.br', 'Superbet', 'Betano'
-                        ]
+                        return self.allowed_bookmakers.copy()
         
         except Exception as e:
             print(f"❌ Erro ao buscar bookmakers: {e}")
             # Fallback para lista básica em caso de erro
-            return [
-                'Bet365', 'Betfair Sportsbook', 'Novibet', 
-                'Stake.bet.br', 'Superbet', 'Betano'
-            ]
+            return self.allowed_bookmakers.copy()
     
     def get_api_status(self) -> Dict:
         """Retorna status atual da API"""
@@ -250,6 +300,31 @@ class OddsAPI:
         except Exception as e:
             print(f"❌ Erro ao buscar apostas: {e}")
             return []
+
+    def _map_market_type(self, market_name: str) -> str:
+        """
+        Mapeia nome do mercado da API para market_type interno
+        """
+        market_mapping = {
+            'moneyline': 'moneyline',
+            'match winner': 'moneyline',
+            'match result': 'moneyline',
+            'h2h': 'h2h',
+            'head to head': 'h2h',
+            'spread': 'spreads',
+            'handicap': 'spreads',
+            'total': 'totals',
+            'over/under': 'totals',
+            'total goals': 'totals',
+            'total points': 'total_points'
+        }
+        
+        market_lower = market_name.lower()
+        for key, value in market_mapping.items():
+            if key in market_lower:
+                return value
+        
+        return 'h2h'  # fallback
 
 # Alias para compatibilidade com testes
 OddsAPIClient = OddsAPI

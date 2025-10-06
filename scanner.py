@@ -3,7 +3,7 @@ Scanner principal - executa o scan de apostas
 """
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 from api_client import OddsAPI
@@ -41,24 +41,24 @@ async def scan_apostas():
         # Verifica status da API
         if not await get_odds_api_status():
             logger.warning("⚠️ API offline, pulando scan")
-            return
+            return "⚠️ API offline"
         
         # Verifica rate limit
         if not await api_rate_limiter.can_make_request():
             logger.warning("⚠️ Rate limit atingido, pulando scan")
-            return
+            return "⚠️ Rate limit atingido"
         
         # Busca usuários ativos
         usuarios_ativos = await _buscar_usuarios_ativos()
         if not usuarios_ativos:
             logger.info("📭 Nenhum usuário ativo encontrado")
-            return
+            return "📭 Nenhum usuário ativo"
         
-        # Busca apostas da API
-        apostas = await _buscar_apostas_api()
+        # Busca apostas da API com base nos bookmakers dos usuários
+        apostas = await _buscar_apostas_api(usuarios_ativos)
         if not apostas:
             logger.info("📭 Nenhuma aposta encontrada na API")
-            return
+            return "📭 Nenhuma aposta encontrada"
         
         # Processa apostas para cada usuário
         total_alertas = 0
@@ -67,9 +67,11 @@ async def scan_apostas():
             total_alertas += len(alertas_usuario)
         
         logger.info(f"✅ Scan concluído: {total_alertas} alertas enviados")
+        return f"📊 {total_alertas} alertas enviados"
         
     except Exception as e:
         logger.error(f"❌ Erro no scan de apostas: {e}")
+        return f"❌ Erro no scan: {str(e)}"
 
 async def _buscar_usuarios_ativos() -> List[Dict[str, Any]]:
     """
@@ -81,8 +83,8 @@ async def _buscar_usuarios_ativos() -> List[Dict[str, Any]]:
                 SELECT 
                     u.chat_id,
                     u.nome,
-                    uf.ev_minimo,
-                    uf.ev_maximo,
+                    uf.ev_faixa_min,
+                    uf.ev_faixa_max,
                     uf.horario_inicio,
                     uf.horario_fim,
                     uf.data_inicio,
@@ -94,30 +96,30 @@ async def _buscar_usuarios_ativos() -> List[Dict[str, Any]]:
             
             usuarios = []
             for row in await cursor.fetchall():
-                # Busca ligas do usuário
+                # Busca ligas do usuário (schema: user_leagues.league)
                 cursor_ligas = await conn.execute("""
-                    SELECT league_name FROM user_leagues WHERE chat_id = ?
+                    SELECT league FROM user_leagues WHERE chat_id = ?
                 """, (row['chat_id'],))
-                ligas = [liga['league_name'] for liga in await cursor_ligas.fetchall()]
+                ligas = [liga['league'] for liga in await cursor_ligas.fetchall()]
                 
-                # Busca esportes do usuário
+                # Busca esportes do usuário (schema: user_sports.sport)
                 cursor_esportes = await conn.execute("""
-                    SELECT sport_name FROM user_sports WHERE chat_id = ?
+                    SELECT sport FROM user_sports WHERE chat_id = ?
                 """, (row['chat_id'],))
-                esportes = [esporte['sport_name'] for esporte in await cursor_esportes.fetchall()]
+                esportes = [esporte['sport'] for esporte in await cursor_esportes.fetchall()]
                 
-                # Busca bookmakers do usuário
+                # Busca bookmakers do usuário (schema: user_bookmakers.bookmaker)
                 cursor_bookmakers = await conn.execute("""
-                    SELECT bookmaker_name FROM user_bookmakers WHERE chat_id = ?
+                    SELECT bookmaker FROM user_bookmakers WHERE chat_id = ?
                 """, (row['chat_id'],))
-                bookmakers = [bm['bookmaker_name'] for bm in await cursor_bookmakers.fetchall()]
+                bookmakers = [bm['bookmaker'] for bm in await cursor_bookmakers.fetchall()]
                 
                 usuario = {
                     'chat_id': row['chat_id'],
                     'nome': row['nome'],
                     'filtros': {
-                        'ev_minimo': row['ev_minimo'] or 0.05,
-                        'ev_maximo': row['ev_maximo'] or 1.0,
+                        'ev_minimo': row['ev_faixa_min'] or 0.05,
+                        'ev_maximo': row['ev_faixa_max'] or 1.0,
                         'horario_inicio': row['horario_inicio'],
                         'horario_fim': row['horario_fim'],
                         'data_inicio': row['data_inicio'],
@@ -135,21 +137,39 @@ async def _buscar_usuarios_ativos() -> List[Dict[str, Any]]:
         logger.error(f"Erro ao buscar usuários ativos: {e}")
         return []
 
-async def _buscar_apostas_api() -> List[Dict[str, Any]]:
+async def _buscar_apostas_api(usuarios_ativos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Busca apostas da API Odds
     """
     try:
-        # Registra request no rate limiter
-        await api_rate_limiter.log_request()
-        
         # Cria cliente da API
         api_client = OddsAPI()
-        
-        # Busca apostas
-        apostas = await api_client.get_apostas()
-        
-        return apostas or []
+
+        # 1) Coletar bookmakers únicos dos usuários
+        bookmakers_unicos = set()
+        for user in usuarios_ativos or []:
+            user_bks = user.get('bookmakers') or []
+            if isinstance(user_bks, str):
+                user_bks = [b.strip() for b in user_bks.split(',') if b.strip()]
+            for bk in user_bks:
+                if bk and bk != 'Stake.bet.br':  # remove casa inexistente
+                    bookmakers_unicos.add(bk)
+
+        if not bookmakers_unicos:
+            logger.info("Nenhum bookmaker configurado pelos usuários")
+            return []
+
+        # 2) Buscar apostas por bookmaker individualmente
+        todos_eventos: List[Dict[str, Any]] = []
+        for bk in bookmakers_unicos:
+            try:
+                eventos_bk = await api_client.get_eventos_geral(bk)
+                todos_eventos.extend(eventos_bk)
+                logger.info(f"📊 {bk}: {len(eventos_bk)} eventos")
+            except Exception as e:
+                logger.error(f"Erro ao buscar {bk}: {e}")
+
+        return todos_eventos
         
     except Exception as e:
         logger.error(f"Erro ao buscar apostas da API: {e}")
@@ -163,6 +183,25 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
         alertas = []
         
         for aposta in apostas:
+            # Ignora eventos com liga desconhecida
+            league_name = (aposta.get('league') or '').strip()
+            if not league_name or league_name.lower() == 'unknown':
+                logger.info("Evento ignorado: liga desconhecida")
+                continue
+            # Ignora eventos já iniciados
+            try:
+                commence_iso = aposta.get('commence_time')
+                if commence_iso:
+                    jogo_time = datetime.fromisoformat(commence_iso.replace('Z', '+00:00'))
+                    if jogo_time.tzinfo is None:
+                        jogo_time = jogo_time.replace(tzinfo=timezone.utc)
+                    agora = datetime.now(timezone.utc)
+                    if jogo_time <= agora:
+                        logger.info("Evento ignorado: já iniciado")
+                        continue
+            except Exception:
+                # Se não conseguir parsear, não bloqueia o envio
+                pass
             # Aplica filtros do usuário
             if not validar_filtros(aposta, usuario['filtros'], usuario['ligas'], 
                                  usuario['esportes'], usuario['bookmakers']):
@@ -234,20 +273,19 @@ async def _salvar_no_historico(chat_id: int, aposta: Dict[str, Any]):
         async with db_pool.get_connection() as conn:
             await conn.execute("""
                 INSERT INTO alert_history 
-                (chat_id, home, away, league, sport, market_type, bet_side, 
-                 odds, ev, stake, bookmaker, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                (chat_id, data_envio, esporte, home, away, mercado, odd, stake, ev, data_jogo, url_bet, bookmaker)
+                VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 chat_id,
+                aposta.get('sport', ''),
                 aposta.get('home', ''),
                 aposta.get('away', ''),
-                aposta.get('league', ''),
-                aposta.get('sport', ''),
                 aposta.get('market_type', ''),
-                aposta.get('bet_side', ''),
                 aposta.get('bet365_odds', 0),
-                aposta.get('ev', 0),
                 aposta.get('stake', 0),
+                aposta.get('ev', 0),
+                aposta.get('commence_time', ''),
+                aposta.get('event_url', ''),
                 aposta.get('bookmaker', ''),
             ))
             
@@ -265,3 +303,4 @@ def _gerar_hash_aposta(aposta: Dict[str, Any]) -> str:
     
     # Gera hash MD5
     return hashlib.md5(dados.encode()).hexdigest()
+

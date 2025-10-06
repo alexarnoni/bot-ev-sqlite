@@ -79,6 +79,10 @@ def get_listener_log_path() -> str:
     os.makedirs(log_dir, exist_ok=True)
     return os.path.join(log_dir, f"listener_{FEED_ID}.log")
 
+def get_database_path(feed_id: str = None) -> str:
+    """Retorna o caminho unificado do banco do feed atual (bot.db)."""
+    return feed_path("bot.db", feed_id)
+
 # Configurações do sistema
 RATE_LIMIT_REQUESTS_PER_HOUR = 4800  # Buffer de segurança
 MAX_CONCURRENT_SCANS = 3

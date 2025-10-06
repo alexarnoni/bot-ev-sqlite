@@ -14,8 +14,7 @@ from config import (
     get_listener_log_path,
     get_telegram_token,
 )
-import sqlite3
-from contextlib import contextmanager
+from database import get_db
 # from filtros import validar_filtros  # REMOVIDO - agora usa SQLite diretamente
 from math import ceil
 from rate_limiter import api_rate_limiter
@@ -43,65 +42,36 @@ load_dotenv()
 TELEGRAM_TOKEN = get_telegram_token()
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 
-BOT_DB_PATH = Path(os.getenv("BOT_DB_PATH", "bot.sqlite3"))
-
-@contextmanager
-def get_db_connection():
-    """Context manager para conexão SQLite síncrona"""
-    conn = sqlite3.connect(BOT_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()
+db = get_db()
 
 
 def _fetch_alert_history(chat_id: str) -> list[dict[str, object]]:
     try:
-        with get_db_connection() as conn:
-            rows = conn.execute(
-                """
-                SELECT ah.event_date, ah.home_team, ah.away_team, ah.ev_value,
-                       ah.bookmaker, ah.league, ah.odds, ah.stake, ah.created_at
-                  FROM alert_history ah
-                  JOIN users u ON u.id = ah.user_id
-                 WHERE u.chat_id = ?
-                 ORDER BY ah.created_at ASC
-                """,
-                (chat_id,),
-            ).fetchall()
-    except sqlite3.Error as exc:
+        history = db.get_user_history(int(chat_id))
+    except Exception as exc:
         logging.error("Erro ao carregar histórico do chat %s: %s", chat_id, exc)
         return []
 
     alertas: list[dict[str, object]] = []
-    for row in rows:
-        data_evento = row["event_date"]
-        if isinstance(data_evento, str):
-            try:
-                data_evento = datetime.fromisoformat(data_evento)
-            except ValueError:
-                data_evento = None
-        created_at = row["created_at"]
-        if isinstance(created_at, str):
-            try:
-                created_at = datetime.fromisoformat(created_at)
-            except ValueError:
-                created_at = None
-
-        referencia = data_evento or created_at
-        data_envio = referencia.isoformat() if isinstance(referencia, datetime) else None
+    for row in history:
+        # Campos do schema novo: data_envio, home, away, ev, bookmaker, odd, stake
+        data_envio = row.get("data_envio")
+        try:
+            if isinstance(data_envio, str):
+                datetime.fromisoformat(data_envio)
+        except ValueError:
+            data_envio = None
 
         alertas.append(
             {
                 "data_envio": data_envio,
-                "home": row["home_team"],
-                "away": row["away_team"],
-                "ev": row["ev_value"],
-                "bookmaker": row["bookmaker"],
-                "league": row["league"],
-                "odds": row["odds"],
-                "stake": row["stake"],
+                "home": row.get("home"),
+                "away": row.get("away"),
+                "ev": row.get("ev"),
+                "bookmaker": row.get("bookmaker"),
+                "league": row.get("league"),
+                "odds": row.get("odd"),
+                "stake": row.get("stake"),
             }
         )
 
@@ -110,51 +80,24 @@ def _fetch_alert_history(chat_id: str) -> list[dict[str, object]]:
 
 def _count_user_alerts(chat_id: str) -> int:
     try:
-        with get_db_connection() as conn:
-            row = conn.execute(
-                """
-                SELECT COUNT(*) AS total
-                  FROM alert_history ah
-                  JOIN users u ON u.id = ah.user_id
-                 WHERE u.chat_id = ?
-                """,
-                (chat_id,),
-            ).fetchone()
-            return int(row["total"]) if row else 0
-    except sqlite3.Error as exc:
+        return db.count_user_alerts(int(chat_id))
+    except Exception as exc:
         logging.error("Erro ao contar alertas do chat %s: %s", chat_id, exc)
         return 0
 
 
 def _count_alerts_on_date(target_date: datetime.date) -> int:
-    inicio = datetime.combine(target_date, datetime.min.time())
-    fim = inicio + timedelta(days=1)
-    inicio_str = inicio.isoformat(sep=" ")
-    fim_str = fim.isoformat(sep=" ")
-
     try:
-        with get_db_connection() as conn:
-            row = conn.execute(
-                """
-                SELECT COUNT(*) AS total
-                  FROM alert_history
-                 WHERE (created_at >= ? AND created_at < ?)
-                    OR (datetime(event_date) >= datetime(?) AND datetime(event_date) < datetime(?))
-                """,
-                (inicio_str, fim_str, inicio_str, fim_str),
-            ).fetchone()
-            return int(row["total"]) if row else 0
-    except sqlite3.Error as exc:
+        return db.count_alerts_on_date(target_date)
+    except Exception as exc:
         logging.error("Erro ao contar alertas do dia %s: %s", target_date, exc)
         return 0
 
 
 def _count_api_cache_entries() -> int:
     try:
-        with get_db_connection() as conn:
-            row = conn.execute("SELECT COUNT(*) AS total FROM api_cache").fetchone()
-            return int(row["total"]) if row else 0
-    except sqlite3.Error as exc:
+        return db.count_api_cache_entries()
+    except Exception as exc:
         logging.error("Erro ao consultar quantidade de cache: %s", exc)
         return 0
 
@@ -162,61 +105,127 @@ def is_admin(chat_id):
     """Verifica se o usuário é admin"""
     return str(chat_id) == ADMIN_CHAT_ID
 
-# ----- Carregar filtros diretamente do banco de dados -----
-def carregar_filtros_startup():
-    """Carrega filtros diretamente do SQLite"""
-    logging.info("🔍 Carregamento de filtros do SQLite...")
+# ----- Migração de banco legado (bot.sqlite3) para schema normalizado -----
+def migrar_banco_legado_se_preciso():
+    """Se existir bot.sqlite3 (legado) e o banco normalizado estiver vazio, migra os filtros."""
     try:
-        filtros = {}
-        with get_db_connection() as conn:
-            # Busca todos os usuários com filtros
-            rows = conn.execute("""
-                SELECT chat_id, filter_data, nome, username 
-                FROM users 
-                WHERE filter_data IS NOT NULL AND filter_data != '{}'
-            """).fetchall()
-            
+        legacy_path = Path("bot.sqlite3")
+        # Se não existe banco legado, nada a fazer
+        if not legacy_path.exists():
+            return 0
+        # Se já existem usuários no banco novo, não migrar
+        if db.get_all_users():
+            return 0
+        import sqlite3 as _sqlite3
+        import json as _json
+        migrated = 0
+        with _sqlite3.connect(str(legacy_path)) as lconn:
+            lconn.row_factory = _sqlite3.Row
+            rows = lconn.execute(
+                "SELECT chat_id, filter_data, nome, username FROM users"
+            ).fetchall()
+            temp: dict[str, dict] = {}
             for row in rows:
-                chat_id = row["chat_id"]
-                filter_data = row["filter_data"]
-                
-                if filter_data:
+                chat_id = str(row["chat_id"]) if row["chat_id"] is not None else None
+                if not chat_id:
+                    continue
+                filtros = {}
+                if row.get("filter_data"):
                     try:
-                        import json
-                        filtros[chat_id] = json.loads(filter_data)
-                    except (json.JSONDecodeError, TypeError):
-                        logging.warning(f"Filtros inválidos para chat_id {chat_id}")
-                        continue
-        
-        logging.info(f"✅ {len(filtros)} filtros carregados do SQLite")
+                        filtros = _json.loads(row["filter_data"]) or {}
+                    except Exception:
+                        filtros = {}
+                if row.get("nome"):
+                    filtros["nome"] = row["nome"]
+                if row.get("username"):
+                    filtros["username"] = row["username"]
+                temp[chat_id] = filtros
+            # Persiste via API normalizada
+            for chat_id, filtros in temp.items():
+                cid = int(chat_id)
+                db.create_or_update_user(cid, filtros.get("nome"), filtros.get("username"))
+                bks = filtros.get("bookmakers") or ([filtros.get("bookmaker")] if filtros.get("bookmaker") else [])
+                db.set_user_bookmakers(cid, bks)
+                db.set_user_leagues(cid, filtros.get("ligas"))
+                db.set_user_sports(cid, filtros.get("esportes"))
+                db.set_user_filter(
+                    cid,
+                    ev_faixa_min=filtros.get("ev_faixa_min"),
+                    ev_faixa_max=filtros.get("ev_faixa_max"),
+                    filtro_dias=filtros.get("filtro_dias"),
+                    data_inicio=filtros.get("data_inicio"),
+                    data_fim=filtros.get("data_fim"),
+                    horario_inicio=filtros.get("horario_inicio"),
+                    horario_fim=filtros.get("horario_fim"),
+                )
+                migrated += 1
+        logging.info(f"✅ Migração de banco legado concluída: {migrated} usuários migrados")
+        return migrated
+    except Exception as exc:
+        logging.error(f"❌ Erro na migração do banco legado: {exc}")
+        return 0
+
+# ----- Carregar filtros diretamente do banco normalizado -----
+def carregar_filtros_startup():
+    """Carrega filtros a partir do schema normalizado"""
+    logging.info("🔍 Carregamento de filtros do banco normalizado...")
+    try:
+        filtros: dict[str, dict] = {}
+        # Reconstroi por usuário usando helper completo
+        users = db.get_all_users()
+        for u in users:
+            chat_id = str(u["chat_id"]) if "chat_id" in u else None
+            if chat_id is None:
+                continue
+            completo = db.get_user_complete(int(chat_id))
+            if completo:
+                filtros[chat_id] = completo
+        logging.info(f"✅ {len(filtros)} filtros carregados do banco normalizado")
         return filtros
     except Exception as exc:
         logging.error(f"❌ Erro no carregamento: {exc}")
         return {}
 
+# Primeiro, tentar migrar banco legado, se aplicável
+migrar_banco_legado_se_preciso()
+
+# Em seguida, carregar filtros do banco normalizado
 filtros_por_chat = carregar_filtros_startup()
 
 
 def salvar_filtros():
-    """Salva filtros diretamente no SQLite"""
+    """Persiste filtros no schema normalizado via Database"""
     try:
-        import json
-        from datetime import datetime
-        
-        with get_db_connection() as conn:
-            for chat_id, filtros in filtros_por_chat.items():
-                if filtros:  # Só salva se tem dados
-                    # Serializa filtros para JSON
-                    filter_data = json.dumps(filtros)
-                    
-                    # UPSERT na tabela users
-                    conn.execute("""
-                        INSERT OR REPLACE INTO users 
-                        (chat_id, filter_data, updated_at) 
-                        VALUES (?, ?, ?)
-                    """, (str(chat_id), filter_data, datetime.now().isoformat()))
-
-        logging.info(f"💾 {len(filtros_por_chat)} filtros salvos no SQLite")
+        for chat_id, filtros in filtros_por_chat.items():
+            if not filtros:
+                continue
+            cid = int(chat_id)
+            # Garante usuário
+            db.create_or_update_user(
+                cid,
+                nome=filtros.get("nome"),
+                username=filtros.get("username"),
+            )
+            # Bookmakers
+            bks = filtros.get("bookmakers")
+            if not bks and filtros.get("bookmaker"):
+                bks = [filtros.get("bookmaker")]
+            db.set_user_bookmakers(cid, bks or [])
+            # Ligas e esportes
+            db.set_user_leagues(cid, filtros.get("ligas"))
+            db.set_user_sports(cid, filtros.get("esportes"))
+            # Filtros numéricos e datas/horários
+            db.set_user_filter(
+                cid,
+                ev_faixa_min=filtros.get("ev_faixa_min"),
+                ev_faixa_max=filtros.get("ev_faixa_max"),
+                filtro_dias=filtros.get("filtro_dias"),
+                data_inicio=filtros.get("data_inicio"),
+                data_fim=filtros.get("data_fim"),
+                horario_inicio=filtros.get("horario_inicio"),
+                horario_fim=filtros.get("horario_fim"),
+            )
+        logging.info(f"💾 {len(filtros_por_chat)} filtros salvos no banco normalizado")
     except Exception as exc:
         logging.error(f"❌ Erro ao salvar filtros: {exc}")
         import traceback

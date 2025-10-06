@@ -16,6 +16,7 @@ from usuarios import get_user_manager
 from cache import get_cache
 from historico import get_history
 from status import get_status
+from database import get_db
 from rate_limiter import get_rate_limiter
 from filtros import evento_valido, aplicar_filtros_dinamicos
 from bot_core import definir_stake
@@ -30,6 +31,7 @@ class BotScheduler:
         self.cache = get_cache()
         self.history = get_history()
         self.status = get_status()
+        self.db = get_db()
         self.rate_limiter = get_rate_limiter()
         self.db = get_db()
         
@@ -155,11 +157,11 @@ class BotScheduler:
                 logger_scan.info(f"✅ Scan concluído em {elapsed:.2f}s - {total_alertas} alertas enviados")
                 
                 # Atualiza status da API
-                self.status.set_api_status(True, "API funcionando normalmente")
+                self.db.set_api_status(True, "API funcionando normalmente")
                 
             except Exception as e:
                 logger_scan.error(f"❌ Erro no scan principal: {e}")
-                self.status.set_api_status(False, "Erro no scan", str(e))
+                self.db.set_api_status(False, "Erro no scan", str(e))
                 self.stats['erros_api'] += 1
     
     async def _processar_usuario(self, user: dict, todos_eventos: list) -> int:
