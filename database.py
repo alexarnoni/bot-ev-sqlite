@@ -193,6 +193,16 @@ class Database:
                 )
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_rate_limiter_ts ON rate_limiter(request_timestamp)")
+
+            # 12. Tabela api_cache (compatibilidade com versões antigas)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS api_cache (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cache_key TEXT UNIQUE NOT NULL,
+                    response_json TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
     
     # === USERS ===
     def create_or_update_user(self, chat_id: int, nome: str = None, username: str = None):
@@ -291,15 +301,15 @@ class Database:
                         (chat_id, league)
                     )
     
-    def get_user_leagues(self, chat_id: int) -> Optional[List[str]]:
-        """Retorna ligas de um usuário"""
+    def get_user_leagues(self, chat_id: int) -> List[List[str]]:
+        """Retorna ligas de um usuário. Sempre retorna lista (possivelmente vazia)."""
         with self.get_connection() as conn:
             rows = conn.execute(
                 "SELECT league FROM user_leagues WHERE chat_id = ?",
                 (chat_id,)
             ).fetchall()
             result = [row['league'] for row in rows]
-            return result if result else None
+            return result
     
     def set_user_sports(self, chat_id: int, sports: Optional[List[str]]):
         """Define esportes de um usuário"""
@@ -312,15 +322,15 @@ class Database:
                         (chat_id, sport)
                     )
     
-    def get_user_sports(self, chat_id: int) -> Optional[List[str]]:
-        """Retorna esportes de um usuário"""
+    def get_user_sports(self, chat_id: int) -> List[str]:
+        """Retorna esportes de um usuário. Sempre retorna lista (possivelmente vazia)."""
         with self.get_connection() as conn:
             rows = conn.execute(
                 "SELECT sport FROM user_sports WHERE chat_id = ?",
                 (chat_id,)
             ).fetchall()
             result = [row['sport'] for row in rows]
-            return result if result else None
+            return result
     
     # === CACHE ===
     def add_to_cache(self, chat_id: int, alert_hash: str):
@@ -405,6 +415,33 @@ class Database:
                 WHERE chat_id = ?
             """, (chat_id,)).fetchone()
             return dict(row) if row else {}
+
+    def count_user_alerts(self, chat_id: int) -> int:
+        """Conta alertas do usuário (últimos N não filtrados por data)"""
+        with self.get_connection() as conn:
+            row = conn.execute("""
+                SELECT COUNT(*) as total FROM alert_history WHERE chat_id = ?
+            """, (chat_id,)).fetchone()
+            return int(row['total']) if row else 0
+
+    def count_alerts_on_date(self, target_date: datetime.date) -> int:
+        """Conta alertas no dia informado considerando data_envio"""
+        from datetime import datetime, timedelta
+        inicio = datetime.combine(target_date, datetime.min.time())
+        fim = inicio + timedelta(days=1)
+        with self.get_connection() as conn:
+            row = conn.execute("""
+                SELECT COUNT(*) as total
+                FROM alert_history
+                WHERE data_envio >= ? AND data_envio < ?
+            """, (inicio.isoformat(sep=" "), fim.isoformat(sep=" "))).fetchone()
+            return int(row['total']) if row else 0
+
+    def count_api_cache_entries(self) -> int:
+        """Conta entradas na tabela api_cache"""
+        with self.get_connection() as conn:
+            row = conn.execute("SELECT COUNT(*) as total FROM api_cache").fetchone()
+            return int(row['total']) if row else 0
     
     # === PENDENTES ===
     def add_pending_alert(self, chat_id: int, evento: Dict):
@@ -544,16 +581,16 @@ class Database:
         
         filters = self.get_user_filter(chat_id)
         bookmakers = self.get_user_bookmakers(chat_id)
-        leagues = self.get_user_leagues(chat_id)
-        sports = self.get_user_sports(chat_id)
+        leagues = self.get_user_leagues(chat_id) or []
+        sports = self.get_user_sports(chat_id) or []
         
         return {
             'nome': user.get('nome'),
             'username': user.get('username'),
             'bookmakers': bookmakers,
             **filters,
-            'ligas': leagues,
-            'esportes': sports
+            'ligas': leagues or [],
+            'esportes': sports or []
         }
 
 # Singleton global

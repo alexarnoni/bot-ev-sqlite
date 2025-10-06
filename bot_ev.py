@@ -46,7 +46,7 @@ class AlertSender:
             await self.bot.send_message(
                 chat_id=chat_id,
                 text=mensagem,
-                parse_mode='Markdown',
+                parse_mode='HTML',
                 disable_web_page_preview=True
             )
             
@@ -63,7 +63,7 @@ class AlertSender:
 
     async def _formatar_alerta(self, aposta: Dict[str, Any]) -> str:
         """
-        Formata o alerta de aposta
+        Formata o alerta de aposta com layout melhorado
         """
         try:
             # Dados básicos
@@ -89,26 +89,31 @@ class AlertSender:
             # Calcula tempo restante
             tempo_restante = self._calcular_tempo_restante(commence_time)
             
-            # Emojis baseados no esporte
-            emoji_esporte = self._get_emoji_esporte(sport)
+            # Formata data completa
+            from formatadores import formatar_data_brasileira, formatar_nome_esporte, formatar_nome_bookmaker, formatar_market_name
+            data_completa = formatar_data_brasileira(commence_time)
+            esporte_fmt = formatar_nome_esporte(sport)
+            bookmaker_fmt = formatar_nome_bookmaker(bookmaker)
             
-            # Monta a mensagem
-            mensagem = f"""
-🎯 **ALERTA EV+** {emoji_esporte}
-
-🏆 **{home} vs {away}**
-📊 **Liga:** {league}
-🎲 **Mercado:** {market_type}
-🎯 **Aposta:** {bet_side}
-🏪 **Bookmaker:** {bookmaker}
-
-💰 **Odd:** {odds_fmt}
-📈 **EV:** {ev_pct}
-💵 **Stake:** {stake_fmt}
-⏰ **Tempo restante:** {tempo_restante}
-
-🚀 **Boa sorte!** 🍀
-            """
+            # Formata mercado com valor (hdp ou total)
+            mercado_fmt = formatar_market_name(market_type, aposta=aposta)
+            
+            # Emojis baseados no esporte e país
+            emoji_esporte = self._get_emoji_esporte(sport)
+            bandeira_pais = self._get_bandeira_pais(league, aposta)
+            
+            # Monta a mensagem com layout melhorado
+            link_evento = aposta.get('bet_url') or aposta.get('event_url') 
+            
+            mensagem = f"""{emoji_esporte} <b>{home} vs {away}</b>
+{bandeira_pais} <b>{league}</b>
+<b>📌 Mercado:</b> {mercado_fmt}
+<b>🔢 Odd {bookmaker_fmt}:</b> {odds_fmt}
+<b>📈 Valor Esperado (EV):</b> {ev_pct}
+<b>🎯 Stake:</b> {stake_fmt}
+<b>🗓️ Data do Jogo:</b> {data_completa}
+<b>⏳ Faltam:</b> {tempo_restante}
+<b>🔗 Abrir na {bookmaker_fmt}</b> ({link_evento})"""
             
             return mensagem.strip()
             
@@ -141,12 +146,13 @@ class AlertSender:
             horas, resto = divmod(diferenca.seconds, 3600)
             minutos, _ = divmod(resto, 60)
             
+            # Formata tempo
             if dias > 0:
-                return f"{dias}d {horas}h {minutos}m"
+                return f"{dias}d {horas}h {minutos}min"
             elif horas > 0:
-                return f"{horas}h {minutos}m"
+                return f"{horas}h {minutos}min"
             else:
-                return f"{minutos}m"
+                return f"{minutos}min"
                 
         except Exception as e:
             logger.error(f"Erro ao calcular tempo restante: {e}")
@@ -169,6 +175,141 @@ class AlertSender:
             'rugby': '🏉'
         }
         return emojis.get(sport.lower(), '🏆')
+
+    def _get_bandeira_pais(self, league: str, aposta: Dict[str, Any] = None) -> str:
+        """
+        Retorna bandeira do país baseado na liga e dados da API
+        """
+        league_lower = league.lower()
+        
+        # Primeiro, tenta detectar por padrões comuns na liga
+        bandeira = self._detectar_pais_por_liga(league_lower)
+        if bandeira != '🏆':
+            return bandeira
+        
+        # Se não encontrou, tenta usar dados adicionais da API
+        if aposta:
+            bandeira = self._detectar_pais_por_dados_api(aposta)
+            if bandeira != '🏆':
+                return bandeira
+        
+        # Fallback: tenta detectar por nomes de times
+        if aposta:
+            bandeira = self._detectar_pais_por_times(aposta)
+            if bandeira != '🏆':
+                return bandeira
+        
+        return '🏆'  # Bandeira padrão
+    
+    def _detectar_pais_por_liga(self, league_lower: str) -> str:
+        """
+        Detecta país baseado em padrões comuns no nome da liga
+        """
+        # Padrões mais comuns primeiro (mais específicos)
+        padroes = [
+            # Competições internacionais - Emojis específicos
+            ('champions league', '🏆'), ('europa league', '🏆'), ('uefa', '🏆'),
+            ('copa libertadores', '🏆'), ('copa sudamericana', '🏆'),
+            ('world cup', '🌍'), ('copa do mundo', '🌍'), ('fifa', '🌍'),
+            ('euro', '🏆'), ('european championship', '🏆'),
+            ('copa america', '🏆'), ('copa áfrica', '🏆'),
+            ('asian cup', '🏆'), ('gold cup', '🏆'),
+            ('conmebol', '🏆'), ('concacaf', '🏆'),
+            ('afc', '🏆'), ('caf', '🏆'), ('ofc', '🏆'),
+            
+            # Competições continentais específicas
+            ('conference league', '🏆'),
+            ('copa do brasil', '🏆🇧🇷'), ('copa del rey', '🏆🇪🇸'),
+            ('fa cup', '🏆🏴󠁧󠁢󠁥󠁮󠁧󠁿'), ('coppa italia', '🏆🇮🇹'),
+            ('dfb pokal', '🏆🇩🇪'), ('coupe de france', '🏆🇫🇷'),
+            ('taça de portugal', '🏆🇵🇹'), ('knvb beker', '🏆🇳🇱'),
+            
+            # Competições de clubes mundiais
+            ('club world cup', '🌍'), ('mundial de clubes', '🌍'),
+            ('supercopa', '🏆'), ('super cup', '🏆'),
+            ('recopa', '🏆'), ('intercontinental', '🌍'),
+            
+            # Países principais
+            ('brazil', '🇧🇷'), ('brasil', '🇧🇷'), ('brasileirão', '🇧🇷'),
+            ('england', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'), ('premier league', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'),
+            ('spain', '🇪🇸'), ('la liga', '🇪🇸'), ('espanha', '🇪🇸'),
+            ('germany', '🇩🇪'), ('bundesliga', '🇩🇪'), ('alemanha', '🇩🇪'),
+            ('italy', '🇮🇹'), ('serie a', '🇮🇹'), ('itália', '🇮🇹'),
+            ('france', '🇫🇷'), ('ligue 1', '🇫🇷'), ('frança', '🇫🇷'),
+            ('netherlands', '🇳🇱'), ('eredivisie', '🇳🇱'), ('holanda', '🇳🇱'),
+            ('portugal', '🇵🇹'), ('primeira liga', '🇵🇹'),
+            ('argentina', '🇦🇷'), ('primera división', '🇦🇷'),
+            ('mexico', '🇲🇽'), ('méxico', '🇲🇽'), ('liga mx', '🇲🇽'),
+            ('usa', '🇺🇸'), ('united states', '🇺🇸'), ('mls', '🇺🇸'),
+            
+            # Outros países
+            ('russia', '🇷🇺'), ('turkey', '🇹🇷'), ('greece', '🇬🇷'),
+            ('belgium', '🇧🇪'), ('switzerland', '🇨🇭'), ('austria', '🇦🇹'),
+            ('poland', '🇵🇱'), ('croatia', '🇭🇷'), ('serbia', '🇷🇸'),
+            ('romania', '🇷🇴'), ('bulgaria', '🇧🇬'), ('hungary', '🇭🇺'),
+            ('norway', '🇳🇴'), ('sweden', '🇸🇪'), ('denmark', '🇩🇰'),
+            ('finland', '🇫🇮'), ('japan', '🇯🇵'), ('china', '🇨🇳'),
+            ('australia', '🇦🇺'), ('canada', '🇨🇦'), ('puerto rico', '🇵🇷'),
+            ('colombia', '🇨🇴'), ('chile', '🇨🇱'), ('peru', '🇵🇪'),
+            ('uruguay', '🇺🇾'), ('ecuador', '🇪🇨'), ('venezuela', '🇻🇪'),
+            ('bolivia', '🇧🇴'), ('paraguay', '🇵🇾')
+        ]
+        
+        for padrao, bandeira in padroes:
+            if padrao in league_lower:
+                return bandeira
+        
+        return '🏆'
+    
+    def _detectar_pais_por_dados_api(self, aposta: Dict[str, Any]) -> str:
+        """
+        Detecta país usando dados adicionais da API
+        """
+        # Tenta extrair país de campos como 'country', 'region', etc.
+        campos_pais = ['country', 'region', 'location', 'venue_country']
+        
+        for campo in campos_pais:
+            valor = aposta.get(campo, '').lower()
+            if valor:
+                return self._detectar_pais_por_liga(valor)
+        
+        return '🏆'
+    
+    def _detectar_pais_por_times(self, aposta: Dict[str, Any]) -> str:
+        """
+        Detecta país baseado nos nomes dos times
+        """
+        home = aposta.get('home', '').lower()
+        away = aposta.get('away', '').lower()
+        
+        # Padrões de cidades/países nos nomes dos times
+        padroes_times = [
+            # Cidades brasileiras
+            ('flamengo', '🇧🇷'), ('palmeiras', '🇧🇷'), ('santos', '🇧🇷'),
+            ('corinthians', '🇧🇷'), ('são paulo', '🇧🇷'), ('fluminense', '🇧🇷'),
+            ('botafogo', '🇧🇷'), ('vasco', '🇧🇷'), ('cruzeiro', '🇧🇷'),
+            ('atlético', '🇧🇷'), ('grêmio', '🇧🇷'), ('internacional', '🇧🇷'),
+            
+            # Times europeus famosos
+            ('real madrid', '🇪🇸'), ('barcelona', '🇪🇸'), ('atletico', '🇪🇸'),
+            ('manchester', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'), ('liverpool', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'),
+            ('arsenal', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'), ('chelsea', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'),
+            ('bayern', '🇩🇪'), ('dortmund', '🇩🇪'), ('juventus', '🇮🇹'),
+            ('milan', '🇮🇹'), ('inter', '🇮🇹'), ('psg', '🇫🇷'),
+            ('ajax', '🇳🇱'), ('porto', '🇵🇹'), ('benfica', '🇵🇹'),
+            
+            # Times sul-americanos
+            ('boca', '🇦🇷'), ('river', '🇦🇷'), ('racing', '🇦🇷'),
+            ('america', '🇲🇽'), ('chivas', '🇲🇽'), ('tigres', '🇲🇽'),
+            ('penarol', '🇺🇾'), ('nacional', '🇺🇾'), ('colo colo', '🇨🇱'),
+            ('universidad', '🇨🇱'), ('millonarios', '🇨🇴'), ('nacional', '🇨🇴')
+        ]
+        
+        for padrao, bandeira in padroes_times:
+            if padrao in home or padrao in away:
+                return bandeira
+        
+        return '🏆'
 
     async def _marcar_usuario_inativo(self, chat_id: int):
         """

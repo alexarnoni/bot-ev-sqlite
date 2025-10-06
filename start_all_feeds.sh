@@ -9,8 +9,8 @@ if [ -f .env ]; then
     export $(grep -v '^#' .env | xargs)
 fi
 
-# Lista de feeds para iniciar
-FEEDS_TO_START=("default" "feed1" "feed2" "feed3" "feed4" "feed_test")
+# Lista de feeds para iniciar (produção - sem feed_test)
+FEEDS_TO_START=("default" "feed1" "feed2" "feed3" "feed4")
 
 echo "📋 Iniciando feeds: ${FEEDS_TO_START[*]}"
 echo

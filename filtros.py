@@ -1,7 +1,7 @@
 """
 Sistema de filtros para validação de eventos
 """
-from datetime import datetime, time
+from datetime import datetime, time, timezone, timedelta
 from typing import Dict, Any
 
 # Mercados proibidos (Half Time)
@@ -66,14 +66,16 @@ def esta_dentro_do_horario(hora_jogo_str: str, horario_inicio: str, horario_fim:
 def esta_dentro_da_data(hora_jogo_str: str, data_inicio, data_fim) -> bool:
     """Verifica se o jogo está dentro do período de datas"""
     try:
-        # Parse da data do jogo
+        # Parse datetime do jogo (tz-aware UTC)
         if 'T' in hora_jogo_str:
-            # Formato ISO: 2025-01-15T20:30:00Z
-            data_jogo = datetime.fromisoformat(hora_jogo_str.replace('Z', '+00:00')).date()
+            data_jogo_dt = datetime.fromisoformat(hora_jogo_str.replace('Z', '+00:00'))
         else:
-            # Formato alternativo
-            data_jogo = datetime.strptime(hora_jogo_str, "%Y-%m-%d %H:%M:%S").date()
-        
+            data_jogo_dt = datetime.strptime(hora_jogo_str, "%Y-%m-%d %H:%M:%S")
+        if data_jogo_dt.tzinfo is None:
+            data_jogo_dt = data_jogo_dt.replace(tzinfo=timezone.utc)
+
+        # Comparação por data (sem timezone) usando a data em UTC
+        data_jogo = data_jogo_dt.astimezone(timezone.utc).date()
         return data_inicio <= data_jogo <= data_fim
     
     except Exception as e:
@@ -119,7 +121,7 @@ def evento_valido(evento: Dict[str, Any], filtros: Dict[str, Any]) -> bool:
         if not esta_dentro_do_horario(hora_jogo, h_ini, h_fim):
             return False
 
-    # Data
+    # Data (período fixo)
     data_inicio_str = filtros.get("data_inicio")
     data_fim_str = filtros.get("data_fim")
     if data_inicio_str and data_fim_str and hora_jogo:
@@ -145,18 +147,20 @@ def aplicar_filtros_dinamicos(evento: Dict[str, Any], filtros: Dict[str, Any]) -
         hora_jogo_str = evento.get("commence_time") or evento.get("date")
         if not hora_jogo_str:
             return True
-        
-        # Parse da data do jogo
+
+        # Parse da data/hora do jogo (tz-aware UTC)
         if 'T' in hora_jogo_str:
             data_jogo = datetime.fromisoformat(hora_jogo_str.replace('Z', '+00:00'))
         else:
             data_jogo = datetime.strptime(hora_jogo_str, "%Y-%m-%d %H:%M:%S")
-        
-        # Verifica se está dentro dos próximos X dias
-        agora = datetime.now()
-        limite = agora.replace(hour=23, minute=59, second=59, microsecond=999999)
-        limite = limite.replace(day=limite.day + filtro_dias)
-        
+        if data_jogo.tzinfo is None:
+            data_jogo = data_jogo.replace(tzinfo=timezone.utc)
+
+        # Janela: agora (UTC) até o fim do dia + filtro_dias (UTC)
+        agora = datetime.now(timezone.utc)
+        fim_do_dia_utc = agora.replace(hour=23, minute=59, second=59, microsecond=999999)
+        limite = fim_do_dia_utc + timedelta(days=filtro_dias)
+
         return agora <= data_jogo <= limite
     
     except Exception as e:
