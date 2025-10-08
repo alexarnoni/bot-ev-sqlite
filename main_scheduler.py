@@ -96,6 +96,9 @@ class BotScheduler:
                 logger_scan.info("🔍 Iniciando scan principal...")
                 start_time = time.time()
                 
+                # Calcula momento do scan uma vez para consistência
+                momento_scan = datetime.now(timezone.utc)
+                
                 # Busca usuários configurados
                 usuarios = self.user_manager.get_all_users()
                 usuarios_configurados = [
@@ -135,11 +138,11 @@ class BotScheduler:
                 logger_scan.info(f"📈 Total de eventos coletados: {len(todos_eventos)}")
                 self.stats['total_eventos'] += len(todos_eventos)
                 
-                # Processa eventos para cada usuário
+                # Processa eventos para cada usuário com momento de scan consistente
                 total_alertas = 0
                 for user in usuarios_configurados:
                     try:
-                        alertas_enviados = await self._processar_usuario(user, todos_eventos)
+                        alertas_enviados = await self._processar_usuario(user, todos_eventos, momento_scan)
                         total_alertas += alertas_enviados
                     except Exception as e:
                         logger_scan.error(f"❌ Erro ao processar usuário {user['chat_id']}: {e}")
@@ -164,7 +167,7 @@ class BotScheduler:
                 self.db.set_api_status(False, "Erro no scan", str(e))
                 self.stats['erros_api'] += 1
     
-    async def _processar_usuario(self, user: dict, todos_eventos: list) -> int:
+    async def _processar_usuario(self, user: dict, todos_eventos: list, momento_scan: datetime = None) -> int:
         """Processa eventos para um usuário específico"""
         chat_id = user['chat_id']
         
@@ -173,10 +176,17 @@ class BotScheduler:
         if not filtros:
             return 0
         
+        # Calcula janela de tempo dinâmica uma vez por usuário
+        janela_tempo = None
+        filtro_dias = filtros.get("filtro_dias")
+        if filtro_dias:
+            from filtros import calcular_janela_tempo_dinamica
+            janela_tempo = calcular_janela_tempo_dinamica(filtro_dias, momento_scan)
+        
         # Filtra eventos válidos
         eventos_validos = []
         for evento in todos_eventos:
-            if evento_valido(evento, filtros) and aplicar_filtros_dinamicos(evento, filtros):
+            if evento_valido(evento, filtros) and aplicar_filtros_dinamicos(evento, filtros, janela_tempo):
                 eventos_validos.append(evento)
         
         if not eventos_validos:

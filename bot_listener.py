@@ -500,11 +500,12 @@ async def start_usuario_novo_callback(query, context):
         "• Monitoramos <b>200+ casas de apostas</b> em tempo real\n"
         "• Encontramos apostas com <b>Valor Esperado Positivo</b>\n"
         "• Te avisamos <b>automaticamente</b> das melhores oportunidades\n\n"
-        "⚡ <b>Setup Rápido (2 minutos):</b>\n"
+        "⚡ <b>Setup Rápido (3 minutos):</b>\n"
         "1️⃣ 🏠 Escolher suas casas de aposta favoritas\n"
         "2️⃣ 📈 Definir seu EV mínimo (recomendado: 5%)\n"
         "3️⃣ 🌍 Selecionar ligas de interesse\n"
-        "4️⃣ 🕐 Configurar horários preferidos\n\n"
+        "4️⃣ 📅 Escolher período de alertas\n"
+        "5️⃣ 🕐 Configurar horários preferidos\n\n"
         "🔔 <b>Resultado:</b> Alertas automáticos das melhores apostas!\n\n"
         "💡 <i>Usado por apostadores profissionais no mundo todo</i>"
     )
@@ -527,11 +528,12 @@ async def start_usuario_novo(update, context):
         "• Monitoramos <b>200+ casas de apostas</b> em tempo real\n"
         "• Encontramos apostas com <b>Valor Esperado Positivo</b>\n"
         "• Te avisamos <b>automaticamente</b> das melhores oportunidades\n\n"
-        "⚡ <b>Setup Rápido (2 minutos):</b>\n"
+        "⚡ <b>Setup Rápido (3 minutos):</b>\n"
         "1️⃣ 🏠 Escolher suas casas de aposta favoritas\n"
         "2️⃣ 📈 Definir seu EV mínimo (recomendado: 5%)\n"
         "3️⃣ 🌍 Selecionar ligas de interesse\n"
-        "4️⃣ 🕐 Configurar horários preferidos\n\n"
+        "4️⃣ 📅 Escolher período de alertas\n"
+        "5️⃣ 🕐 Configurar horários preferidos\n\n"
         "🔔 <b>Resultado:</b> Alertas automáticos das melhores apostas!\n\n"
         "💡 <i>Usado por apostadores profissionais no mundo todo</i>"
     )
@@ -610,7 +612,7 @@ async def setup_passo3_callback(update, context):
     ]
     
     msg = (
-        "🌍 <b>Passo 3/4: Regiões de Interesse</b>\n\n"
+        "🌍 <b>Passo 3/5: Regiões de Interesse</b>\n\n"
         "Escolha as regiões que você quer monitorar:\n\n"
         "🇧🇷 <b>Brasil:</b> Brasileirão, Copa do Brasil, etc.\n"
         "🇪🇺 <b>Europa:</b> Premier League, La Liga, etc.\n"
@@ -644,11 +646,54 @@ async def setup_regiao_callback(update, context):
     
     salvar_filtros()
     
-    # Vai para passo final
+    # Vai para passo 4 (filtro de dias)
     await setup_passo4_callback(update, context)
 
 async def setup_passo4_callback(update, context):
-    """Passo 4: Configurações opcionais"""
+    """Passo 4: Escolher período de alertas"""
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("📅 1 Dia", callback_data="setup_dias|1")],
+        [InlineKeyboardButton("📅 2 Dias", callback_data="setup_dias|2")],
+        [InlineKeyboardButton("📅 3 Dias", callback_data="setup_dias|3")],
+        [InlineKeyboardButton("📅 7 Dias", callback_data="setup_dias|7")],
+        [InlineKeyboardButton("♾️ Ilimitado", callback_data="setup_dias|0")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo3")],
+    ]
+    
+    msg = (
+        "📅 <b>Passo 4/5: Período de Alertas</b>\n\n"
+        "Por quantos dias você quer receber alertas?\n\n"
+        "📅 <b>1 Dia:</b> Apenas apostas de hoje\n"
+        "📅 <b>2 Dias:</b> Hoje e amanhã\n"
+        "📅 <b>3 Dias:</b> Próximos 3 dias\n"
+        "📅 <b>7 Dias:</b> Próxima semana\n"
+        "♾️ <b>Ilimitado:</b> Sempre ativo\n\n"
+        "💡 <b>Dica:</b> Recomendamos 3-7 dias para começar"
+    )
+    
+    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+async def setup_dias_callback(update, context):
+    """Processa seleção de filtro de dias no setup"""
+    query = update.callback_query
+    await query.answer()
+    
+    dias = int(query.data.split("|")[1])
+    chat_id = str(query.message.chat_id)
+    
+    # Salva filtro de dias
+    filtros_por_chat.setdefault(chat_id, {})
+    filtros_por_chat[chat_id]["filtro_dias"] = dias if dias > 0 else None
+    salvar_filtros()
+    
+    # Vai para passo 5 (horários)
+    await setup_passo5_callback(update, context)
+
+async def setup_passo5_callback(update, context):
+    """Passo 5: Configurações de horário (opcional)"""
     query = update.callback_query
     await query.answer()
     
@@ -657,11 +702,11 @@ async def setup_passo4_callback(update, context):
         [InlineKeyboardButton("☀️ Apenas Tarde (14h-18h)", callback_data="setup_horario|14:00|18:00")],
         [InlineKeyboardButton("🕐 Personalizar Horário", callback_data="setup_horario_custom")],
         [InlineKeyboardButton("⏭️ Pular (24h)", callback_data="setup_finalizar")],
-        [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo3")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo4")],
     ]
     
     msg = (
-        "🕐 <b>Passo 4/4: Horários (Opcional)</b>\n\n"
+        "🕐 <b>Passo 5/5: Horários (Opcional)</b>\n\n"
         "Quer receber alertas apenas em horários específicos?\n\n"
         "🌆 <b>Noite:</b> Ideal para futebol brasileiro\n"
         "☀️ <b>Tarde:</b> Ideal para futebol europeu\n"
@@ -701,6 +746,7 @@ async def setup_finalizar_callback(update, context):
     ev_min = filtros.get("ev_faixa_min", 0.05)
     ev_max = filtros.get("ev_faixa_max")
     ligas = filtros.get("ligas")
+    filtro_dias = filtros.get("filtro_dias")
     horario_inicio = filtros.get("horario_inicio")
     horario_fim = filtros.get("horario_fim")
     
@@ -709,6 +755,21 @@ async def setup_finalizar_callback(update, context):
         ev_texto = f"{ev_min*100:.1f}%-{ev_max*100:.1f}%"
     else:
         ev_texto = f"{ev_min*100:.1f}%+"
+    
+    # Filtro de dias texto
+    if filtro_dias:
+        if filtro_dias == 1:
+            dias_texto = "1 dia"
+        elif filtro_dias == 2:
+            dias_texto = "2 dias"
+        elif filtro_dias == 3:
+            dias_texto = "3 dias"
+        elif filtro_dias == 7:
+            dias_texto = "7 dias"
+        else:
+            dias_texto = f"{filtro_dias} dias"
+    else:
+        dias_texto = "Ilimitado"
             
     keyboard = [
         [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual_inline")],
@@ -722,6 +783,7 @@ async def setup_finalizar_callback(update, context):
         f"🏠 <b>Casas:</b> {', '.join(bookmakers[:2])}\n"
         f"📈 <b>EV:</b> {ev_texto}\n"
         f"🌍 <b>Ligas:</b> {'Personalizadas' if ligas else 'Todas'}\n"
+        f"📅 <b>Período:</b> {dias_texto}\n"
         f"🕐 <b>Horário:</b> {f'{horario_inicio}-{horario_fim}' if horario_inicio else '24h'}\n\n"
         "🔔 <b>A partir de agora você receberá alertas automáticos!</b>\n\n"
         "📡 <i>Monitoramento ativo a cada 5 minutos</i>\n"
@@ -971,7 +1033,7 @@ async def setup_ligas_custom_callback(update, context):
             
     keyboard = [
         [InlineKeyboardButton("⚽ Usar /ligas para personalizar", callback_data="explicar_ligas_custom")],
-        [InlineKeyboardButton("⏭️ Pular por agora", callback_data="setup_passo4")],
+        [InlineKeyboardButton("⏭️ Pular por agora", callback_data="setup_passo5")],
         [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo3")],
     ]
     
@@ -1009,7 +1071,7 @@ async def explicar_ligas_custom_callback(update, context):
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton("⏭️ Continuar Setup", callback_data="setup_passo4")],
+        [InlineKeyboardButton("⏭️ Continuar Setup", callback_data="setup_passo5")],
         [InlineKeyboardButton("🔙 Voltar", callback_data="setup_passo3")],
     ]
     
@@ -2146,6 +2208,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "setup_passo4":
         await setup_passo4_callback(update, context)
+        return
+
+    elif data == "setup_passo5":
+        await setup_passo5_callback(update, context)
+        return
+
+    elif data.startswith("setup_dias|"):
+        await setup_dias_callback(update, context)
         return
 
     elif data.startswith("setup_horario|"):
