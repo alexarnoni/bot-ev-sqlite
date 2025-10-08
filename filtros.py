@@ -135,9 +135,39 @@ def evento_valido(evento: Dict[str, Any], filtros: Dict[str, Any]) -> bool:
 
     return True
 
-def aplicar_filtros_dinamicos(evento: Dict[str, Any], filtros: Dict[str, Any]) -> bool:
+def calcular_janela_tempo_dinamica(filtro_dias: int, momento_scan: datetime = None) -> tuple:
     """
-    Aplica filtros dinâmicos baseados em dias
+    Calcula a janela de tempo para filtros dinâmicos baseada no momento do scan.
+    Retorna (inicio, fim) da janela de tempo.
+    
+    Args:
+        filtro_dias: Número de dias para o filtro
+        momento_scan: Momento do scan (default: agora)
+    
+    Returns:
+        tuple: (inicio_janela, fim_janela) em UTC
+    """
+    if not filtro_dias or not isinstance(filtro_dias, int):
+        return None, None
+    
+    if momento_scan is None:
+        momento_scan = datetime.now(timezone.utc)
+    
+    # Janela: início do dia atual até o fim do dia + filtro_dias (UTC)
+    inicio_do_dia_utc = momento_scan.replace(hour=0, minute=0, second=0, microsecond=0)
+    fim_do_dia_utc = momento_scan.replace(hour=23, minute=59, second=59, microsecond=999999)
+    limite = fim_do_dia_utc + timedelta(days=filtro_dias)
+    
+    return inicio_do_dia_utc, limite
+
+def aplicar_filtros_dinamicos(evento: Dict[str, Any], filtros: Dict[str, Any], janela_tempo: tuple = None) -> bool:
+    """
+    Aplica filtros dinâmicos baseados em dias usando janela de tempo pré-calculada.
+    
+    Args:
+        evento: Evento a ser filtrado
+        filtros: Filtros do usuário
+        janela_tempo: Tupla (inicio, fim) da janela de tempo (opcional)
     """
     filtro_dias = filtros.get("filtro_dias")
     if not filtro_dias or not isinstance(filtro_dias, int):
@@ -156,12 +186,17 @@ def aplicar_filtros_dinamicos(evento: Dict[str, Any], filtros: Dict[str, Any]) -
         if data_jogo.tzinfo is None:
             data_jogo = data_jogo.replace(tzinfo=timezone.utc)
 
-        # Janela: agora (UTC) até o fim do dia + filtro_dias (UTC)
-        agora = datetime.now(timezone.utc)
-        fim_do_dia_utc = agora.replace(hour=23, minute=59, second=59, microsecond=999999)
-        limite = fim_do_dia_utc + timedelta(days=filtro_dias)
+        # Usa janela pré-calculada ou calcula na hora (fallback)
+        if janela_tempo:
+            inicio_janela, fim_janela = janela_tempo
+        else:
+            # Fallback: calcula na hora (comportamento antigo)
+            inicio_janela, fim_janela = calcular_janela_tempo_dinamica(filtro_dias)
 
-        return agora <= data_jogo <= limite
+        if inicio_janela is None or fim_janela is None:
+            return True
+
+        return inicio_janela <= data_jogo <= fim_janela
     
     except Exception as e:
         print(f"Erro ao aplicar filtros dinâmicos: {e}")

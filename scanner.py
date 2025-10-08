@@ -38,6 +38,9 @@ async def scan_apostas():
     try:
         logger.info("🔍 Iniciando scan de apostas...")
         
+        # Calcula momento do scan uma vez para consistência
+        momento_scan = datetime.now(timezone.utc)
+        
         # Verifica status da API
         if not await get_odds_api_status():
             logger.warning("⚠️ API offline, pulando scan")
@@ -60,10 +63,10 @@ async def scan_apostas():
             logger.info("📭 Nenhuma aposta encontrada na API")
             return "📭 Nenhuma aposta encontrada"
         
-        # Processa apostas para cada usuário
+        # Processa apostas para cada usuário com momento de scan consistente
         total_alertas = 0
         for usuario in usuarios_ativos:
-            alertas_usuario = await _processar_apostas_usuario(usuario, apostas)
+            alertas_usuario = await _processar_apostas_usuario(usuario, apostas, momento_scan)
             total_alertas += len(alertas_usuario)
         
         logger.info(f"✅ Scan concluído: {total_alertas} alertas enviados")
@@ -175,12 +178,19 @@ async def _buscar_apostas_api(usuarios_ativos: List[Dict[str, Any]]) -> List[Dic
         logger.error(f"Erro ao buscar apostas da API: {e}")
         return []
 
-async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict[str, Any]], momento_scan: datetime = None) -> List[Dict[str, Any]]:
     """
     Processa apostas para um usuário específico
     """
     try:
         alertas = []
+        
+        # Calcula janela de tempo dinâmica uma vez por usuário
+        janela_tempo = None
+        filtro_dias = usuario['filtros'].get("filtro_dias")
+        if filtro_dias and momento_scan:
+            from filtros import calcular_janela_tempo_dinamica
+            janela_tempo = calcular_janela_tempo_dinamica(filtro_dias, momento_scan)
         
         for aposta in apostas:
             # Ignora eventos com liga desconhecida
@@ -195,7 +205,8 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
                     jogo_time = datetime.fromisoformat(commence_iso.replace('Z', '+00:00'))
                     if jogo_time.tzinfo is None:
                         jogo_time = jogo_time.replace(tzinfo=timezone.utc)
-                    agora = datetime.now(timezone.utc)
+                    # Usa momento do scan se disponível, senão usa agora
+                    agora = momento_scan if momento_scan else datetime.now(timezone.utc)
                     if jogo_time <= agora:
                         logger.info("Evento ignorado: já iniciado")
                         continue
@@ -205,6 +216,11 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
             # Aplica filtros do usuário
             if not validar_filtros(aposta, usuario['filtros'], usuario['ligas'], 
                                  usuario['esportes'], usuario['bookmakers']):
+                continue
+            
+            # Aplica filtros dinâmicos com janela pré-calculada
+            from filtros import aplicar_filtros_dinamicos
+            if not aplicar_filtros_dinamicos(aposta, usuario['filtros'], janela_tempo):
                 continue
             
             # Verifica se já foi enviado (cache)
