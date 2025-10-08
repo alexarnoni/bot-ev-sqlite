@@ -26,34 +26,27 @@ def calcular_odd_minima(ev, prob_real):
     except Exception:
         return None
 
-def definir_stake(ev, odd, ev_minimo=0.05):
+def definir_stake(ev, odd):
     """
     Define stake fixa com base apenas na odd:
     - Odds entre 1.50 e 3.50 → 1.0u
     - Odds entre 3.51 e 8.00 → 0.5u
     - Odds acima de 8.00     → 0.25u
     - Odds fora desses intervalos → 0.1u
-
-    EV mínimo para considerar: configurável pelo usuário (padrão = 5%)
-    Stake mínima: 0.10u
-
-    Retorna: stake (float)
+    
+    IMPORTANTE: A validação de EV já foi feita pelos filtros do usuário.
+    Não validamos EV aqui porque cada usuário tem seu próprio ev_minimo configurado.
     """
-    if ev < ev_minimo:
-        return 0  # Ignora apostas abaixo do EV configurado
-
     try:
         odd = float(odd)
     except (TypeError, ValueError):
         return 0
 
     if 1.50 <= odd <= 3.50:
-        stake = 1.0
+        return 1.0
     elif 3.51 <= odd <= 8.00:
-        stake = 0.5
+        return 0.5
     elif odd > 8.00:
-        stake = 0.25
+        return 0.25
     else:
-        stake = 0.1
-
-    return round(stake, 2)
+        return 0.1
