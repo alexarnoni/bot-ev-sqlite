@@ -1768,7 +1768,8 @@ async def callback_data_dinamica(update, context):
     
     salvar_filtros()
     
-    hoje = datetime.now().date()
+    from datetime import timezone
+    hoje = datetime.now(timezone.utc).date()
     data_fim = hoje + timedelta(days=dias)
     await query.edit_message_text(
         f"✅ <b>Filtro dinâmico configurado!</b>\n\n"
