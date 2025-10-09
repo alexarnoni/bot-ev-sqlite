@@ -668,7 +668,11 @@ def montar_nome_mercado(evento):
                         valor_hdp = hdp
                     
                     # Determina Mais/Menos baseado no lado
-                    if lado == "home":
+                    if lado == "over":
+                        lado_pt = "Mais de"
+                    elif lado == "under":
+                        lado_pt = "Menos de"
+                    elif lado == "home":
                         lado_pt = "Mais de"
                     elif lado == "away":
                         lado_pt = "Menos de"
