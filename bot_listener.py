@@ -18,6 +18,7 @@ from database import get_db
 # from filtros import validar_filtros  # REMOVIDO - agora usa SQLite diretamente
 from math import ceil
 from rate_limiter import api_rate_limiter
+from scanner import scan_apostas_usuario
 from scanner import scan_apostas
 from status import get_odds_api_status
 from utils import carregar_catalogo_ligas, TRADUCAO_ESPORTE_EN
