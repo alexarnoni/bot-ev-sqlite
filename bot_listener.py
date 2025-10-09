@@ -667,12 +667,12 @@ async def setup_passo4_callback(update, context):
     msg = (
         "📅 <b>Passo 4/5: Período de Alertas</b>\n\n"
         "Por quantos dias você quer receber alertas?\n\n"
-        "📅 <b>1 Dia:</b> Apenas apostas de hoje\n"
-        "📅 <b>2 Dias:</b> Hoje e amanhã\n"
-        "📅 <b>3 Dias:</b> Próximos 3 dias\n"
-        "📅 <b>7 Dias:</b> Próxima semana\n"
+        "📅 <b>1 Dia:</b> Dentro de 24 horas\n"
+        "📅 <b>2 Dias:</b> Dentro de 48 horas\n"
+        "📅 <b>3 Dias:</b> Dentro de 72 horas\n"
+        "📅 <b>7 Dias:</b> Dentro de 168 horas\n"
         "♾️ <b>Ilimitado:</b> Sempre ativo\n\n"
-        "💡 <b>Dica:</b> Recomendamos 3-7 dias para começar"
+        "💡 <b>Dica:</b> O filtro se renova automaticamente a cada dia"
     )
     
     await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
@@ -1709,10 +1709,11 @@ async def callback_bookmaker(update, context):
 async def filtros_data_handler(update, context):
     """Menu para configurar filtros de data"""
     keyboard = [
-        [InlineKeyboardButton("📅 Próximos 3 dias", callback_data="data_dinamica|3")],
-        [InlineKeyboardButton("📅 Próximos 7 dias", callback_data="data_dinamica|7")],
-        [InlineKeyboardButton("📅 Próximos 15 dias", callback_data="data_dinamica|15")],
-        [InlineKeyboardButton("📅 Próximos 30 dias", callback_data="data_dinamica|30")],
+        [InlineKeyboardButton("📅 1 Dia", callback_data="data_dinamica|1")],
+        [InlineKeyboardButton("📅 2 Dias", callback_data="data_dinamica|2")],
+        [InlineKeyboardButton("📅 3 Dias", callback_data="data_dinamica|3")],
+        [InlineKeyboardButton("📅 7 Dias", callback_data="data_dinamica|7")],
+        [InlineKeyboardButton("♾️ Ilimitado", callback_data="data_dinamica|0")],
         [InlineKeyboardButton("🗓️ Período específico", callback_data="data_estatica")],
         [InlineKeyboardButton("🧹 Remover filtro de data", callback_data="data_remover")],
         [InlineKeyboardButton("🔙 Voltar", callback_data="reconfigurar")],
@@ -1722,6 +1723,11 @@ async def filtros_data_handler(update, context):
         "📅 <b>Filtro de Data dos Jogos</b>\n\n"
         "🔄 <b>Dinâmico (recomendado):</b>\n"
         "Sempre os próximos X dias a partir de hoje\n\n"
+        "📅 <b>1 Dia:</b> Dentro de 24 horas\n"
+        "📅 <b>2 Dias:</b> Dentro de 48 horas\n"
+        "📅 <b>3 Dias:</b> Dentro de 72 horas\n"
+        "📅 <b>7 Dias:</b> Dentro de 168 horas\n"
+        "♾️ <b>Ilimitado:</b> Sempre ativo\n\n"
         "⚠️ <b>Estático:</b>\n"
         "Período fixo que expira\n\n"
         "Escolha sua preferência:"
