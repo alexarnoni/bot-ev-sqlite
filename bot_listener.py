@@ -1565,40 +1565,38 @@ async def ligas_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def ligas_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-        chat_id = str(query.message.chat.id)
-        data = query.data
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.message.chat.id)
+    data = query.data
 
-        filtros_usuario, _ = atualizar_info_usuario(chat_id, update.effective_user)
+    filtros_usuario, _ = atualizar_info_usuario(chat_id, update.effective_user)
 
-        selecao = context.user_data.get("ligas_selecao")
-        if not selecao:
-            await query.edit_message_text("Sessão de seleção expirada. Use /ligas novamente.")
-        if not selecao:
-            await query.edit_message_text("Sessão de seleção expirada. Use /ligas novamente.")
-            return
+    selecao = context.user_data.get("ligas_selecao")
+    if not selecao:
+        await query.edit_message_text("Sessão de seleção expirada. Use /ligas novamente.")
+        return
 
-        if data.startswith("liga_toggle|"):
-            liga = data.split("|", 1)[1]
-            if liga in selecao["selecionadas"]:
-                selecao["selecionadas"].remove(liga)
-            else:
-                selecao["selecionadas"].add(liga)
-            selecao["selecionadas"].add(liga)
+    if data.startswith("liga_toggle|"):
+        liga = data.split("|", 1)[1]
+        if liga in selecao["selecionadas"]:
+            selecao["selecionadas"].remove(liga)  # Remove se já estava selecionada
+        else:
+            selecao["selecionadas"].add(liga)     # Adiciona se não estava selecionada
+        
         # Atualiza botões
-        if data.startswith("liga_toggle|"):
-            await query.edit_message_reply_markup(
-                reply_markup=gerar_botoes_ligas(selecao["todas_ligas"], selecao["selecionadas"])
-            )
-        elif data == "liga_salvar":
-            filtros_usuario["ligas"] = sorted(selecao["selecionadas"])
-            filtros_usuario["esportes"] = None  # Ou mantenha esportes anteriores se quiser
-            salvar_filtros()
-            await query.edit_message_text(
-                f"✅ Filtro atualizado! {len(selecao['selecionadas'])} ligas salvas."
-            )
-        # Limpa a seleção do usuário
+        await query.edit_message_reply_markup(
+            reply_markup=gerar_botoes_ligas(selecao["todas_ligas"], selecao["selecionadas"])
+        )
+        
+    elif data == "liga_salvar":
+        filtros_usuario["ligas"] = sorted(selecao["selecionadas"])
+        filtros_usuario["esportes"] = None
+        salvar_filtros()
+        await query.edit_message_text(
+            f"✅ Filtro atualizado! {len(selecao['selecionadas'])} ligas salvas."
+        )
+        # Limpa a seleção do usuário apenas após salvar
         context.user_data.pop("ligas_selecao", None)
 
 async def escolher_bookmaker(update, context):
