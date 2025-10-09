@@ -8,8 +8,9 @@ echo
 if tmux has-session -t "dashboard_web" 2>/dev/null; then
     echo "✅ Dashboard está rodando!"
     echo
-    echo "📊 Acesse: http://localhost:5000"
-    echo "🌐 Ou: http://$(hostname -I | awk '{print $1}'):5000"
+    echo "📊 Acesse: http://localhost:5001"
+    echo "🌐 Ou: http://$(hostname -I | awk '{print $1}'):5001"
+    echo "🌍 Externo: http://144.22.239.128:5001"
     echo
     echo "🔧 Comandos úteis:"
     echo "   tmux attach -t dashboard_web    # Conectar à sessão"
