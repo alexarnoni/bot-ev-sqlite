@@ -92,16 +92,18 @@ def evento_valido(evento: Dict[str, Any], filtros: Dict[str, Any]) -> bool:
     ev = evento.get("ev", 0)  # ← JÁ VEM CONVERTIDO DO PARSE
     odd = evento.get("bet365_odds", 0)
     hora_jogo = evento.get("commence_time") or evento.get("date")
-    market_name = evento.get("market_name", "").lower()
+    market_name = (evento.get("market_name") or "").lower()
 
     # Ignora mercados proibidos
     if any(x in market_name for x in MERCADOS_PROIBIDOS):
         return False
 
     # Ligas e esportes
-    if filtros.get("ligas") and liga not in filtros["ligas"]:
+    ligas_filtro = filtros.get("ligas")
+    if ligas_filtro and liga not in ligas_filtro:
         return False
-    if filtros.get("esportes") and esporte not in filtros["esportes"]:
+    esportes_filtro = filtros.get("esportes")
+    if esportes_filtro and esporte not in esportes_filtro:
         return False
 
     # Odd válida
