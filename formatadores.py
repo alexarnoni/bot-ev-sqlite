@@ -10,7 +10,7 @@ def formatar_ev(ev: Union[float, int]) -> str:
     try:
         ev_float = float(ev)
         ev_pct = ev_float * 100
-        return f"{ev_pct:+.2f}%"
+        return f"{ev_pct:.2f}%"
     except (TypeError, ValueError):
         return "0.00%"
 
