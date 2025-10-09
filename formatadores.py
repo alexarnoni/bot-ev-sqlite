@@ -399,6 +399,72 @@ def extrair_linha_mercado(evento):
         return aplicar_sinal(total)
     return ""
 
+def get_sport_betside_logic(sport: str, market_type: str, bet_side: str) -> str:
+    """
+    Define a lógica de betSide para cada esporte e tipo de mercado
+    
+    Args:
+        sport: Esporte (ex: 'americanfootball', 'baseball', 'tennis')
+        market_type: Tipo de mercado (ex: 'player props', 'ml', 'totals')
+        bet_side: Lado da aposta (ex: 'home', 'away', 'over', 'under')
+    
+    Returns:
+        str: Texto para exibir (ex: 'Mais de', 'Menos de', 'Home', 'Away')
+    """
+    
+    sport_lower = sport.lower()
+    market_lower = market_type.lower()
+    bet_side_lower = bet_side.lower()
+    
+    # ESPORTES COM PLAYER PROPS (home=Over, away=Under)
+    player_props_sports = [
+        'americanfootball', 'american football', 'futebol americano',
+        'baseball', 'beisebol',
+        'basketball', 'basquete',
+        'hockey', 'ice hockey', 'hóquei',
+        'soccer', 'football', 'futebol'
+    ]
+    
+    # Verifica se é player prop
+    is_player_prop = (
+        'player' in market_lower or 
+        'player props' in market_lower or
+        'player prop' in market_lower
+    )
+    
+    # Verifica se o esporte usa lógica home=Over/away=Under para player props
+    uses_home_away_over_under = (
+        sport_lower in player_props_sports and 
+        is_player_prop
+    )
+    
+    if uses_home_away_over_under:
+        # Lógica: home=Over, away=Under
+        if bet_side_lower == 'home':
+            return 'Mais de'
+        elif bet_side_lower == 'away':
+            return 'Menos de'
+        elif bet_side_lower == 'over':
+            return 'Mais de'
+        elif bet_side_lower == 'under':
+            return 'Menos de'
+    
+    # ESPORTES COM LÓGICA OVER/UNDER EXPLÍCITA
+    elif bet_side_lower in ['over', 'under']:
+        if bet_side_lower == 'over':
+            return 'Mais de'
+        elif bet_side_lower == 'under':
+            return 'Menos de'
+    
+    # ESPORTES COM LÓGICA HOME/AWAY (nomes dos times)
+    elif bet_side_lower in ['home', 'away']:
+        # Para mercados normais, home/away = nomes dos times
+        return bet_side.title()
+    
+    # FALLBACK
+    else:
+        return bet_side.title()
+
 def _traduzir_tipo_prop(tipo_prop: str, esporte: str) -> str:
     """
     Traduz tipo de player prop para português
@@ -472,7 +538,8 @@ def _traduzir_tipo_prop(tipo_prop: str, esporte: str) -> str:
             'strikeouts': 'Strikeouts',
             'walks': 'Bases por Bola',
             'stolen bases': 'Bases Roubadas',
-            'innings pitched': 'Entradas Lançadas'
+            'innings pitched': 'Entradas Lançadas',
+            'total bases': 'Total Bases'
         }
         return props_baseball.get(tipo_lower, tipo_prop.title())
     
@@ -667,18 +734,8 @@ def montar_nome_mercado(evento):
                     except Exception:
                         valor_hdp = hdp
                     
-                    # Determina Mais/Menos baseado no lado
-                    # Para player props da API: home = Over, away = Under
-                    if lado == "home":
-                        lado_pt = "Mais de"
-                    elif lado == "away":
-                        lado_pt = "Menos de"
-                    elif lado == "over":
-                        lado_pt = "Mais de"
-                    elif lado == "under":
-                        lado_pt = "Menos de"
-                    else:
-                        lado_pt = TRADUCAO_LADOS.get(lado, "")
+                    # Usa a lógica personalizada por esporte
+                    lado_pt = get_sport_betside_logic(esporte, nome_raw, lado)
                     return f"{jogador} - {lado_pt} {valor_hdp} {tipo_prop}"
         except Exception:
             pass  # fallback para o código existente abaixo
