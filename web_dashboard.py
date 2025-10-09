@@ -410,6 +410,67 @@ class BotMonitor:
             'top_bookmakers': sorted(all_bookmakers.items(), key=lambda x: x[1], reverse=True)[:10],
             'hourly_distribution': dict(sorted(all_hours.items()))
         }
+    
+    def get_config(self) -> Dict[str, Any]:
+        """Retorna configurações atuais do .env"""
+        config = {}
+        env_file = os.path.join(os.getcwd(), '.env')
+        
+        if os.path.exists(env_file):
+            try:
+                with open(env_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            key, value = line.split('=', 1)
+                            config[key] = value
+            except Exception as e:
+                print(f"Erro ao ler .env: {e}")
+        
+        # Configurações padrão se não existirem
+        default_config = {
+            'ODDS_API_KEY': '',
+            'TELEGRAM_BOT_TOKEN': '',
+            'FEED_ID': 'default',
+            'DASHBOARD_PORT': '8080',
+            'DASHBOARD_HOST': '0.0.0.0',
+            'SCAN_INTERVAL': '120',
+            'MAX_ALERTS_PER_DAY': '50',
+            'DEFAULT_EV_MIN': '0.05',
+            'DEFAULT_EV_MAX': '1.0'
+        }
+        
+        # Merge com padrões
+        for key, default_value in default_config.items():
+            if key not in config:
+                config[key] = default_value
+        
+        return config
+    
+    def save_config(self, new_config: Dict[str, str]) -> Dict[str, Any]:
+        """Salva configurações no .env"""
+        try:
+            env_file = os.path.join(os.getcwd(), '.env')
+            
+            # Faz backup do .env atual
+            if os.path.exists(env_file):
+                backup_file = f"{env_file}.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                import shutil
+                shutil.copy2(env_file, backup_file)
+            
+            # Escreve novo .env
+            with open(env_file, 'w', encoding='utf-8') as f:
+                f.write("# Configurações do Bot EV+\n")
+                f.write("# Gerado automaticamente pelo dashboard\n\n")
+                
+                for key, value in new_config.items():
+                    if value:  # Só salva valores não vazios
+                        f.write(f"{key}={value}\n")
+            
+            return {'success': True, 'message': 'Configurações salvas com sucesso!'}
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
 
 # Instância global do monitor
 monitor = BotMonitor()
@@ -589,6 +650,26 @@ def api_backup_db():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/config/get')
+def api_get_config():
+    """API para obter configurações atuais"""
+    return jsonify(monitor.get_config())
+
+@app.route('/api/config/save', methods=['POST'])
+def api_save_config():
+    """API para salvar configurações"""
+    try:
+        data = request.get_json()
+        result = monitor.save_config(data)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 500
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     print(f"🚀 Iniciando Dashboard Web...")
