@@ -23,7 +23,7 @@ CORS(app)
 
 # Configurações
 FEED_ID = os.getenv("FEED_ID", "default")
-DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "5001"))
+DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "8080"))
 DASHBOARD_HOST = os.getenv("DASHBOARD_HOST", "0.0.0.0")
 
 def get_database_path():
