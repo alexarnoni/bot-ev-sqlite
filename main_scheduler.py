@@ -225,7 +225,7 @@ class BotScheduler:
                 # EV+ 10% = instantâneo
                 if ev >= 0.10:  # 10% em decimal
                     alertas_instantaneos.append((evento, stake))
-                    logger_scan.info(f"🚨 ALERTA INSTANTÂNEO detectado para {chat_id}: EV {ev:.2%}")
+                    logger_scan.info(f"🚨 Alerta de alta prioridade detectado para {chat_id}: EV {ev:.2%}")
                 else:
                     alertas_normais.append((evento, stake))
         

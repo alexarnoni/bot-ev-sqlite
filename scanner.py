@@ -371,7 +371,7 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
                 # EV+ 10% = instantâneo
                 if ev >= 0.10:  # 10% em decimal
                     alertas_instantaneos.append((evento, stake))
-                    logger.info(f"🚨 ALERTA INSTANTÂNEO detectado para {chat_id}: EV {ev:.2%}")
+                    logger.info(f"🚨 Alerta de alta prioridade detectado para {chat_id}: EV {ev:.2%}")
                 else:
                     alertas_normais.append((evento, stake))
         

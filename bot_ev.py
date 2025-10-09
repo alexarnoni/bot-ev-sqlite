@@ -106,26 +106,27 @@ class AlertSender:
             link_evento = aposta.get('bet_url') or aposta.get('event_url') 
             
             # Formata o link como hiperlink HTML se disponível
-            link_html = f'<a href="{link_evento}">Abrir na {bookmaker_fmt}</a>' if link_evento else f'Abrir na {bookmaker_fmt}'
+            if link_evento:
+                link_formatado = f'<a href="{link_evento}">🔗 Abrir na {bookmaker_fmt}</a>'
+            else:
+                link_formatado = f"🔗 Abrir na {bookmaker_fmt} (link não disponível)"
             
-            # MENSAGEM INSTANTÂNEA COM DESTAQUE ESPECIAL
-            mensagem = f"""<b>ALERTA INSTANTÂNEO - EV ALTO!</b>
-
-{emoji_esporte} <b>{home}</b> vs <b>{away}</b>
-{bandeira_pais} {league}
-📌 Mercado: {mercado_fmt}
-🔢 Odd {bookmaker_fmt}: {odds_fmt}
-📈 <b>Valor Esperado (EV): {ev_pct}</b> ⚡
-🎯 Stake: {stake_fmt}
-🗓️ Data do Jogo: {data_completa}
-⏳ Faltam: {tempo_restante}
-🔗 {link_html}"""
+            # MENSAGEM PADRONIZADA
+            mensagem = f"""{emoji_esporte} <b>{home} vs {away}</b>
+{bandeira_pais} <b>{league}</b>
+<b>📌 Mercado:</b> {mercado_fmt}
+<b>🔢 Odd {bookmaker_fmt}:</b> {odds_fmt}
+<b>📈 Valor Esperado (EV):</b> {ev_pct}
+<b>🎯 Stake:</b> {stake_fmt}
+<b>🗓️ Data do Jogo:</b> {data_completa}
+<b>⏳ Faltam:</b> {tempo_restante}
+{link_formatado}"""
             
-            return mensagem
+            return mensagem.strip()
             
         except Exception as e:
             logger.error(f"Erro ao formatar alerta instantâneo: {e}")
-            return f"🚨 ALERTA INSTANTÂNEO - EV Alto detectado! Erro na formatação: {e}"
+            return f"🚨 Erro na formatação do alerta: {e}"
 
     async def _formatar_alerta(self, aposta: Dict[str, Any]) -> str:
         """
@@ -551,7 +552,7 @@ async def enviar_alerta_instantaneo(chat_id, evento: Dict[str, Any], stake: floa
             disable_web_page_preview=True
         )
         
-        logger.info(f"🚨 ALERTA INSTANTÂNEO enviado para {chat_id}: EV {evento.get('ev', 0):.2%}")
+        logger.info(f"🚨 Alerta de alta prioridade enviado para {chat_id}: EV {evento.get('ev', 0):.2%}")
         
     except Exception as e:
         logger.error(f"❌ Erro ao enviar alerta instantâneo para {chat_id}: {e}")
