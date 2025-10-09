@@ -12,7 +12,7 @@ from filtros import validar_filtros
 from rate_limiter import api_rate_limiter
 from status import get_odds_api_status
 from utils import carregar_catalogo_ligas
-from bot_ev import enviar_alertas_batch
+from bot_ev import enviar_alertas_batch, enviar_alerta_instantaneo
 from bot_core import definir_stake
 from cache import get_cache
 from config import FEED_ID

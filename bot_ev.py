@@ -479,8 +479,14 @@ async def enviar_alertas_batch(chat_id: int, batch: list):
     """
     Envia múltiplos alertas em batch
     """
-    for aposta, stake in batch:
-        await alert_sender.enviar_alerta(chat_id, aposta)
+    try:
+        for aposta, stake in batch:
+            await alert_sender.enviar_alerta(chat_id, aposta)
+            # Pequena pausa entre alertas para evitar spam
+            await asyncio.sleep(0.5)
+    except Exception as e:
+        logger.error(f"Erro ao enviar batch para {chat_id}: {e}")
+        raise
 
 def get_alert_sender() -> AlertSender:
     """
