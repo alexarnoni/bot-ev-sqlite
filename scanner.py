@@ -91,7 +91,8 @@ async def _buscar_usuarios_ativos() -> List[Dict[str, Any]]:
                     uf.horario_inicio,
                     uf.horario_fim,
                     uf.data_inicio,
-                    uf.data_fim
+                    uf.data_fim,
+                    uf.filtro_dias
                 FROM users u
                 LEFT JOIN user_filters uf ON u.chat_id = uf.chat_id
                 WHERE u.is_active = 1
@@ -121,12 +122,13 @@ async def _buscar_usuarios_ativos() -> List[Dict[str, Any]]:
                     'chat_id': row['chat_id'],
                     'nome': row['nome'],
                     'filtros': {
-                        'ev_minimo': row['ev_faixa_min'] or 0.05,
-                        'ev_maximo': row['ev_faixa_max'] or 1.0,
+                        'ev_faixa_min': row['ev_faixa_min'] or 0.05,
+                        'ev_faixa_max': row['ev_faixa_max'] or 1.0,
                         'horario_inicio': row['horario_inicio'],
                         'horario_fim': row['horario_fim'],
                         'data_inicio': row['data_inicio'],
-                        'data_fim': row['data_fim']
+                        'data_fim': row['data_fim'],
+                        'filtro_dias': row['filtro_dias']
                     },
                     'ligas': ligas,
                     'esportes': esportes,
