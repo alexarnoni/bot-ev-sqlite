@@ -21,9 +21,9 @@ python3 web_dashboard.py
 
 ### 3. Acessar no navegador
 ```
-http://localhost:5000
+http://localhost:8080
 # ou
-http://IP_DA_VM:5000
+http://IP_DA_VM:8080
 ```
 
 ## 📊 Funcionalidades
@@ -61,13 +61,13 @@ http://IP_DA_VM:5000
 ### Variáveis de ambiente
 ```bash
 # No arquivo .env
-DASHBOARD_PORT=5000          # Porta do dashboard
+DASHBOARD_PORT=8080          # Porta do dashboard
 DASHBOARD_HOST=0.0.0.0       # Host (0.0.0.0 = acessível externamente)
 FEED_ID=default              # Feed a monitorar
 ```
 
 ### Portas
-- **5000**: Dashboard web (padrão)
+- **8080**: Dashboard web (padrão)
 - **22**: SSH da VM
 - **Outras**: Portas dos bots (se configuradas)
 
@@ -76,16 +76,16 @@ FEED_ID=default              # Feed a monitorar
 ### 1. Configurar firewall (se necessário)
 ```bash
 # Ubuntu/Debian
-sudo ufw allow 5000
+sudo ufw allow 8080
 
 # CentOS/RHEL
-sudo firewall-cmd --permanent --add-port=5000/tcp
+sudo firewall-cmd --permanent --add-port=8080/tcp
 sudo firewall-cmd --reload
 ```
 
 ### 2. Acessar de outro computador
 ```
-http://IP_DA_VM:5000
+http://IP_DA_VM:8080
 ```
 
 ### 3. Descobrir IP da VM
@@ -159,7 +159,7 @@ tmux attach -t dashboard_web
 pip install -r requirements_dashboard.txt
 
 # Verificar porta
-netstat -tlnp | grep 5000
+netstat -tlnp | grep 8080
 ```
 
 ### Não consegue acessar externamente
