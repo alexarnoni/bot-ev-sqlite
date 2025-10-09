@@ -411,7 +411,7 @@ async def start_usuario_configurado(update, context, filtros_usuario):
         f"📅 <b>Datas:</b> {status_data}\n"
         f"🕐 <b>Horários:</b> {status_horario}\n\n"
         "📡 <i>Monitoramento automático ativo!</i>\n"
-        "🔔 <i>Alertas enviados a cada 3 minutos</i>"
+        "🔔 <i>Alertas enviados a cada 2 minutos</i>"
     )
     
     await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode="HTML")
@@ -786,7 +786,7 @@ async def setup_finalizar_callback(update, context):
         f"📅 <b>Período:</b> {dias_texto}\n"
         f"🕐 <b>Horário:</b> {f'{horario_inicio}-{horario_fim}' if horario_inicio else '24h'}\n\n"
         "🔔 <b>A partir de agora você receberá alertas automáticos!</b>\n\n"
-        "📡 <i>Monitoramento ativo a cada 5 minutos</i>\n"
+        "📡 <i>Monitoramento ativo a cada 2 minutos</i>\n"
         "💡 <i>Use /start para gerenciar suas configurações</i>"
     )
     await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
@@ -1195,7 +1195,7 @@ async def enviar_setup_finalizacao_message(update, context):
         f"🌍 <b>Ligas:</b> {'Personalizadas' if ligas else 'Todas'}\n"
         f"🕐 <b>Horário:</b> {f'{horario_inicio}-{horario_fim}' if horario_inicio else '24h'}\n\n"
         "📢 <b>A partir de agora você receberá alertas automáticos!</b>\n\n"
-        "📡 <i>Monitoramento ativo a cada 5 minutos</i>\n"
+        "📡 <i>Monitoramento ativo a cada 2 minutos</i>\n"
         "💡 <i>Use /start para gerenciar suas configurações</i>"
     )
     
