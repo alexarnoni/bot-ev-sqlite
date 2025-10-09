@@ -365,7 +365,7 @@ async def start_usuario_configurado(update, context, filtros_usuario):
     
     # Determina status dos filtros
     if filtro_dias:
-        status_data = f"Próximos {filtro_dias} dias 🔄"
+        status_data = f"{filtro_dias} dias (renova automaticamente) 🔄"
     elif data_inicio and data_fim:
         # Verifica se é estático e se expirou
         try:
@@ -436,7 +436,7 @@ async def start_usuario_configurado_callback(query, context, filtros_usuario):
     horario_fim = filtros_usuario.get("horario_fim")
     
     if filtro_dias:
-        status_data = f"Próximos {filtro_dias} dias 🔄"
+        status_data = f"{filtro_dias} dias (renova automaticamente) 🔄"
     elif data_inicio and data_fim:
         try:
             data_fim_obj = datetime.strptime(data_fim, "%Y-%m-%d").date()
@@ -1002,7 +1002,7 @@ async def ver_filtros_inline_detalhado(update, context, chat_id):
     
     # Data
     if filtro_dias:
-        msg += f"\n📅 <b>Datas:</b> Próximos {filtro_dias} dias (dinâmico)\n"
+        msg += f"\n📅 <b>Datas:</b> {filtro_dias} dias (renova automaticamente) 🔄\n"
     elif data_inicio and data_fim:
         msg += f"\n📅 <b>Datas:</b> {data_inicio} até {data_fim} (estático ⚠️)\n"
     else:
@@ -1722,7 +1722,7 @@ async def filtros_data_handler(update, context):
     msg = (
         "📅 <b>Filtro de Data dos Jogos</b>\n\n"
         "🔄 <b>Dinâmico (recomendado):</b>\n"
-        "Sempre os próximos X dias a partir de hoje\n\n"
+        "Sempre os próximos X dias a partir de hoje (renova automaticamente)\n\n"
         "📅 <b>1 Dia:</b> Dentro de 24 horas\n"
         "📅 <b>2 Dias:</b> Dentro de 48 horas\n"
         "📅 <b>3 Dias:</b> Dentro de 72 horas\n"
@@ -1762,7 +1762,7 @@ async def callback_data_dinamica(update, context):
     data_fim = hoje + timedelta(days=dias)
     await query.edit_message_text(
         f"✅ <b>Filtro dinâmico configurado!</b>\n\n"
-        f"📅 Sempre os próximos {dias} dias\n"
+        f"📅 {dias} dias (renova automaticamente)\n"
         f"🔄 Hoje até {data_fim.strftime('%d/%m/%Y')}\n\n"
         f"💡 <i>Se atualiza automaticamente todos os dias!</i>",
         parse_mode="HTML"
