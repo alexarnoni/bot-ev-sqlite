@@ -23,7 +23,7 @@ CORS(app)
 
 # Configurações
 FEED_ID = os.getenv("FEED_ID", "default")
-DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "5000"))
+DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "5001"))
 DASHBOARD_HOST = os.getenv("DASHBOARD_HOST", "0.0.0.0")
 
 def get_database_path():
@@ -334,6 +334,7 @@ if __name__ == '__main__':
     print(f"🚀 Iniciando Dashboard Web...")
     print(f"📊 Acesse: http://localhost:{DASHBOARD_PORT}")
     print(f"🌐 Ou: http://{DASHBOARD_HOST}:{DASHBOARD_PORT}")
+    print(f"🌍 Externo: http://144.22.239.128:{DASHBOARD_PORT}")
     print(f"📁 Feed: {FEED_ID}")
     
     app.run(
