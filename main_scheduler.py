@@ -33,7 +33,6 @@ class BotScheduler:
         self.status = get_status()
         self.db = get_db()
         self.rate_limiter = get_rate_limiter()
-        self.db = get_db()
         
         # Semáforo para controlar concorrência
         self.scan_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SCANS)
