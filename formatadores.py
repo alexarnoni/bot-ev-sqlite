@@ -295,19 +295,25 @@ def tipo_total_por_esporte(esporte):
     
     # Esportes que usam GOLS
     esportes_gols = [
-        "soccer", "football", "handball", "futsal", "futebol"
+        "soccer", "football", "futebol", "handball", "handebol", "futsal"
     ]
     
     # Esportes que usam PONTOS
     esportes_pontos = [
-        "basketball", "volleyball", "american football", "americanfootball", 
-        "rugby", "rugby league", "rugby union", "australian football", "afl",
-        "golf", "darts", "snooker", "pool", "billiards"
+        "basketball", "basquete", "volleyball", "vôlei", "volley",
+        "american football", "americanfootball", "futebol americano",
+        "rugby", "rugby league", "rugby union", 
+        "australian football", "afl",
+        "golf", "darts", "dardos", "snooker", 
+        "pool", "sinuca", "billiards", "bilhar",
+        "hockey", "ice hockey", "hóquei", "icehockey",
+        "beisebol"  # Baseball em português usa pontos para alguns mercados
     ]
     
     # Esportes que usam GAMES/SETS
     esportes_games = [
-        "tennis", "table tennis", "badminton", "squash", "racquetball"
+        "tennis", "tenis", "table tennis", "tenis de mesa",
+        "badminton", "squash", "racquetball"
     ]
     
     # Esportes que usam CORRIDAS
@@ -317,7 +323,8 @@ def tipo_total_por_esporte(esporte):
     
     # Esportes que usam ROUNDS
     esportes_rounds = [
-        "boxing", "mma", "ufc", "kickboxing", "muay thai", "karate", "taekwondo"
+        "boxing", "boxe", "mma", "ufc", "kickboxing", "muay thai", 
+        "karate", "karatê", "taekwondo"
     ]
     
     # Esportes que usam MAPAS
@@ -329,6 +336,11 @@ def tipo_total_por_esporte(esporte):
     # Esportes que usam TEMPO
     esportes_tempo = [
         "formula 1", "f1", "motogp", "nascar", "indycar", "rally", "rallycross"
+    ]
+    
+    # Esportes que usam SETS (diferente de games)
+    esportes_sets = [
+        "volleyball sets", "tennis sets"  # Para mercados específicos de sets
     ]
     
     if esporte_lower in esportes_gols:
@@ -345,6 +357,8 @@ def tipo_total_por_esporte(esporte):
         return "Mapas"
     elif esporte_lower in esportes_tempo:
         return "Tempo"
+    elif esporte_lower in esportes_sets:
+        return "Sets"
     else:
         return "Pontos"  # Fallback genérico
 
