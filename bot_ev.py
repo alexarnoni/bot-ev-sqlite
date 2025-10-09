@@ -34,17 +34,20 @@ class AlertSender:
         self.bot = Bot(token=self.bot_token)
         self.db_pool = db_pool
 
-    async def enviar_alerta(self, chat_id: int, aposta: Dict[str, Any]):
+    async def enviar_alerta(self, chat_id, aposta: Dict[str, Any]):
         """
         Envia alerta de aposta para o usuário
         """
         try:
+            # Converte chat_id para int se necessário
+            chat_id_int = int(chat_id) if isinstance(chat_id, str) else chat_id
+            
             # Formata o alerta
             mensagem = await self._formatar_alerta(aposta)
             
             # Envia a mensagem
             await self.bot.send_message(
-                chat_id=chat_id,
+                chat_id=chat_id_int,
                 text=mensagem,
                 parse_mode='HTML',
                 disable_web_page_preview=True
@@ -454,7 +457,7 @@ async def enviar_alerta(chat_id: int, aposta: Dict[str, Any]):
     """
     await alert_sender.enviar_alerta(chat_id, aposta)
 
-async def enviar_alerta_instantaneo(chat_id: int, evento: Dict[str, Any], stake: float):
+async def enviar_alerta_instantaneo(chat_id, evento: Dict[str, Any], stake: float):
     """
     Envia alerta instantâneo para EV+ 10%
     """
@@ -462,9 +465,12 @@ async def enviar_alerta_instantaneo(chat_id: int, evento: Dict[str, Any], stake:
         # Formata o alerta com indicação de INSTANTÂNEO
         mensagem = await alert_sender._formatar_alerta_instantaneo(evento, stake)
         
+        # Converte chat_id para int se necessário
+        chat_id_int = int(chat_id) if isinstance(chat_id, str) else chat_id
+        
         # Envia IMEDIATAMENTE
         await alert_sender.bot.send_message(
-            chat_id=chat_id,
+            chat_id=chat_id_int,
             text=mensagem,
             parse_mode='HTML',
             disable_web_page_preview=True
@@ -475,13 +481,16 @@ async def enviar_alerta_instantaneo(chat_id: int, evento: Dict[str, Any], stake:
     except Exception as e:
         logger.error(f"❌ Erro ao enviar alerta instantâneo para {chat_id}: {e}")
 
-async def enviar_alertas_batch(chat_id: int, batch: list):
+async def enviar_alertas_batch(chat_id, batch: list):
     """
     Envia múltiplos alertas em batch
     """
     try:
+        # Converte chat_id para int se necessário
+        chat_id_int = int(chat_id) if isinstance(chat_id, str) else chat_id
+        
         for aposta, stake in batch:
-            await alert_sender.enviar_alerta(chat_id, aposta)
+            await alert_sender.enviar_alerta(chat_id_int, aposta)
             # Pequena pausa entre alertas para evitar spam
             await asyncio.sleep(0.5)
     except Exception as e:
