@@ -201,13 +201,20 @@ class AlertSender:
             if not commence_time:
                 return "N/A"
             
+            from datetime import timezone
+            
             # Parse da data/hora
             if 'T' in commence_time:
                 jogo_time = datetime.fromisoformat(commence_time.replace('Z', '+00:00'))
             else:
                 jogo_time = datetime.strptime(commence_time, "%Y-%m-%d %H:%M:%S")
             
-            agora = datetime.now(jogo_time.tzinfo) if jogo_time.tzinfo else datetime.now()
+            # Se não tem timezone, assume UTC
+            if jogo_time.tzinfo is None:
+                jogo_time = jogo_time.replace(tzinfo=timezone.utc)
+            
+            # Usa UTC para comparação consistente
+            agora = datetime.now(timezone.utc)
             diferenca = jogo_time - agora
             
             if diferenca.total_seconds() < 0:
