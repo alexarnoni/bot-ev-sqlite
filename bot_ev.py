@@ -61,6 +61,69 @@ class AlertSender:
         except Exception as e:
             logger.error(f"❌ Erro inesperado ao enviar alerta: {e}")
 
+    async def _formatar_alerta_instantaneo(self, aposta: Dict[str, Any], stake: float) -> str:
+        """
+        Formata alerta instantâneo para EV+ 10% com destaque especial
+        """
+        try:
+            # Dados básicos
+            home = aposta.get('home', '')
+            away = aposta.get('away', '')
+            league = aposta.get('league', '')
+            sport = aposta.get('sport', '')
+            market_type = aposta.get('market_type', '')
+            bet_side = aposta.get('bet_side', '')
+            odds = aposta.get('bet365_odds', 0)
+            ev = aposta.get('ev', 0)
+            bookmaker = aposta.get('bookmaker', '')
+            commence_time = aposta.get('commence_time', '')
+            
+            # Formata valores
+            ev_pct = formatar_ev(ev)
+            odds_fmt = formatar_odd(odds)
+            stake_fmt = formatar_stake(stake)
+            
+            # Calcula tempo restante
+            tempo_restante = self._calcular_tempo_restante(commence_time)
+            
+            # Formata data completa
+            from formatadores import formatar_data_brasileira, formatar_nome_esporte, formatar_nome_bookmaker, formatar_market_name
+            data_completa = formatar_data_brasileira(commence_time)
+            esporte_fmt = formatar_nome_esporte(sport)
+            bookmaker_fmt = formatar_nome_bookmaker(bookmaker)
+            
+            # Formata mercado com valor (hdp ou total)
+            mercado_fmt = formatar_market_name(market_type, aposta=aposta)
+            
+            # Emojis baseados no esporte e país
+            emoji_esporte = self._get_emoji_esporte(sport)
+            bandeira_pais = self._get_bandeira_pais(league, aposta)
+            
+            # Monta a mensagem com layout melhorado
+            link_evento = aposta.get('bet_url') or aposta.get('event_url') 
+            
+            # Formata o link como hiperlink HTML se disponível
+            link_html = f'<a href="{link_evento}">Abrir na {bookmaker_fmt}</a>' if link_evento else f'Abrir na {bookmaker_fmt}'
+            
+            # MENSAGEM INSTANTÂNEA COM DESTAQUE ESPECIAL
+            mensagem = f"""🚨 <b>ALERTA INSTANTÂNEO - EV ALTO!</b> 🚨
+
+{emoji_esporte} <b>{home}</b> vs <b>{away}</b>
+{bandeira_pais} {league}
+📌 Mercado: {mercado_fmt}
+🔢 Odd {bookmaker_fmt}: {odds_fmt}
+📈 <b>Valor Esperado (EV): {ev_pct}</b> ⚡
+🎯 Stake: {stake_fmt}
+🗓️ Data do Jogo: {data_completa}
+⏳ Faltam: {tempo_restante}
+🔗 {link_html}"""
+            
+            return mensagem
+            
+        except Exception as e:
+            logger.error(f"Erro ao formatar alerta instantâneo: {e}")
+            return f"🚨 ALERTA INSTANTÂNEO - EV Alto detectado! Erro na formatação: {e}"
+
     async def _formatar_alerta(self, aposta: Dict[str, Any]) -> str:
         """
         Formata o alerta de aposta com layout melhorado
@@ -390,6 +453,27 @@ async def enviar_alerta(chat_id: int, aposta: Dict[str, Any]):
     Função global para enviar alerta
     """
     await alert_sender.enviar_alerta(chat_id, aposta)
+
+async def enviar_alerta_instantaneo(chat_id: int, evento: Dict[str, Any], stake: float):
+    """
+    Envia alerta instantâneo para EV+ 10%
+    """
+    try:
+        # Formata o alerta com indicação de INSTANTÂNEO
+        mensagem = await alert_sender._formatar_alerta_instantaneo(evento, stake)
+        
+        # Envia IMEDIATAMENTE
+        await alert_sender.bot.send_message(
+            chat_id=chat_id,
+            text=mensagem,
+            parse_mode='HTML',
+            disable_web_page_preview=True
+        )
+        
+        logger.info(f"🚨 ALERTA INSTANTÂNEO enviado para {chat_id}: EV {evento.get('ev', 0):.2%}")
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao enviar alerta instantâneo para {chat_id}: {e}")
 
 async def enviar_alertas_batch(chat_id: int, batch: list):
     """
