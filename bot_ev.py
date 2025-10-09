@@ -105,6 +105,12 @@ class AlertSender:
             # Monta a mensagem com layout melhorado
             link_evento = aposta.get('bet_url') or aposta.get('event_url') 
             
+            # Formata o link como hiperlink HTML se disponível
+            if link_evento:
+                link_formatado = f'<a href="{link_evento}">🔗 Abrir na {bookmaker_fmt}</a>'
+            else:
+                link_formatado = f"🔗 Abrir na {bookmaker_fmt} (link não disponível)"
+            
             mensagem = f"""{emoji_esporte} <b>{home} vs {away}</b>
 {bandeira_pais} <b>{league}</b>
 <b>📌 Mercado:</b> {mercado_fmt}
@@ -113,7 +119,7 @@ class AlertSender:
 <b>🎯 Stake:</b> {stake_fmt}
 <b>🗓️ Data do Jogo:</b> {data_completa}
 <b>⏳ Faltam:</b> {tempo_restante}
-<b>🔗 Abrir na {bookmaker_fmt}</b> ({link_evento})"""
+{link_formatado}"""
             
             return mensagem.strip()
             
