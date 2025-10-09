@@ -12,7 +12,9 @@ from filtros import validar_filtros
 from rate_limiter import api_rate_limiter
 from status import get_odds_api_status
 from utils import carregar_catalogo_ligas
-from bot_ev import enviar_alerta
+from bot_ev import enviar_alertas_batch
+from bot_core import definir_stake
+from cache import get_cache
 from config import FEED_ID
 import os
 
@@ -182,24 +184,27 @@ async def _buscar_apostas_api(usuarios_ativos: List[Dict[str, Any]]) -> List[Dic
 
 async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict[str, Any]], momento_scan: datetime = None) -> List[Dict[str, Any]]:
     """
-    Processa apostas para um usuário específico
+    Processa apostas para um usuário específico - PADRONIZADO COM SCAN AUTOMÁTICO
     """
     try:
-        alertas = []
+        chat_id = usuario['chat_id']
+        filtros = usuario['filtros']
         
         # Calcula janela de tempo dinâmica uma vez por usuário
         janela_tempo = None
-        filtro_dias = usuario['filtros'].get("filtro_dias")
+        filtro_dias = filtros.get("filtro_dias")
         if filtro_dias and momento_scan:
             from filtros import calcular_janela_tempo_dinamica
             janela_tempo = calcular_janela_tempo_dinamica(filtro_dias, momento_scan)
         
+        # Filtra eventos válidos (MESMA LÓGICA DO SCAN AUTOMÁTICO)
+        eventos_validos = []
         for aposta in apostas:
             # Ignora eventos com liga desconhecida
             league_name = (aposta.get('league') or '').strip()
             if not league_name or league_name.lower() == 'unknown':
-                logger.info("Evento ignorado: liga desconhecida")
                 continue
+            
             # Ignora eventos já iniciados
             try:
                 commence_iso = aposta.get('commence_time')
@@ -207,40 +212,64 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
                     jogo_time = datetime.fromisoformat(commence_iso.replace('Z', '+00:00'))
                     if jogo_time.tzinfo is None:
                         jogo_time = jogo_time.replace(tzinfo=timezone.utc)
-                    # Usa momento do scan se disponível, senão usa agora
                     agora = momento_scan if momento_scan else datetime.now(timezone.utc)
                     if jogo_time <= agora:
-                        logger.info("Evento ignorado: já iniciado")
                         continue
             except Exception:
-                # Se não conseguir parsear, não bloqueia o envio
                 pass
-            # Aplica filtros do usuário
-            if not validar_filtros(aposta, usuario['filtros'], usuario['ligas'], 
+            
+            # Aplica filtros do usuário (MESMA LÓGICA)
+            if not validar_filtros(aposta, filtros, usuario['ligas'], 
                                  usuario['esportes'], usuario['bookmakers']):
                 continue
             
-            # Aplica filtros dinâmicos com janela pré-calculada
+            # Aplica filtros dinâmicos (MESMA LÓGICA)
             from filtros import aplicar_filtros_dinamicos
-            if not aplicar_filtros_dinamicos(aposta, usuario['filtros'], janela_tempo):
+            if not aplicar_filtros_dinamicos(aposta, filtros, janela_tempo):
                 continue
             
-            # Verifica se já foi enviado (cache)
-            if await _ja_foi_enviado(usuario['chat_id'], aposta):
-                continue
-            
-            # Envia alerta
-            await enviar_alerta(usuario['chat_id'], aposta)
-            
-            # Salva no cache
-            await _salvar_no_cache(usuario['chat_id'], aposta)
-            
-            # Salva no histórico
-            await _salvar_no_historico(usuario['chat_id'], aposta)
-            
-            alertas.append(aposta)
+            eventos_validos.append(aposta)
         
-        return alertas
+        if not eventos_validos:
+            return []
+        
+        # Remove duplicatas do cache (MESMA LÓGICA)
+        cache = get_cache()
+        eventos_novos = []
+        for evento in eventos_validos:
+            if not cache.is_duplicate(chat_id, evento):
+                eventos_novos.append(evento)
+        
+        if not eventos_novos:
+            return []
+        
+        # Calcula stake e envia alertas (MESMA LÓGICA)
+        alertas_para_enviar = []
+        for evento in eventos_novos:
+            stake = definir_stake(evento.get('ev', 0), evento.get('bet365_odds', 0))
+            if stake > 0:
+                alertas_para_enviar.append((evento, stake))
+        
+        if not alertas_para_enviar:
+            return []
+        
+        # Envia alertas em batches (MESMA LÓGICA)
+        alertas_enviados = 0
+        for i in range(0, len(alertas_para_enviar), 5):  # Batch de 5
+            batch = alertas_para_enviar[i:i+5]
+            try:
+                await enviar_alertas_batch(chat_id, batch)
+                alertas_enviados += len(batch)
+                
+                # Adiciona ao cache e histórico
+                for evento, stake in batch:
+                    cache.add_alert(chat_id, evento)
+                    await _salvar_no_historico(chat_id, evento)
+                    
+            except Exception as e:
+                logger.error(f"Erro ao enviar batch para {chat_id}: {e}")
+        
+        return [evento for evento, stake in alertas_para_enviar]
         
     except Exception as e:
         logger.error(f"Erro ao processar apostas para usuário {usuario['chat_id']}: {e}")
