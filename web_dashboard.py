@@ -301,7 +301,7 @@ class BotMonitor:
                     
                     # Alertas hoje
                     today = datetime.now().strftime('%Y-%m-%d')
-                    cursor.execute("SELECT COUNT(*) FROM alert_history WHERE DATE(created_at) = ?", (today,))
+                    cursor.execute("SELECT COUNT(*) FROM alert_history WHERE DATE(data_envio) = ?", (today,))
                     alerts_today = cursor.fetchone()[0]
                     all_alerts += alerts_today
                     
@@ -366,35 +366,35 @@ class BotMonitor:
                     conn = sqlite3.connect(feed_db_path)
                     cursor = conn.cursor()
                     
-                    # Top ligas
+                    # Top esportes (substitui ligas)
                     cursor.execute("""
-                        SELECT league, COUNT(*) as count 
+                        SELECT esporte, COUNT(*) as count 
                         FROM alert_history 
-                        WHERE DATE(created_at) >= DATE('now', '-7 days')
-                        GROUP BY league 
+                        WHERE DATE(data_envio) >= DATE('now', '-7 days')
+                        GROUP BY esporte 
                         ORDER BY count DESC 
                         LIMIT 10
                     """)
-                    for league, count in cursor.fetchall():
-                        all_leagues[league] = all_leagues.get(league, 0) + count
+                    for esporte, count in cursor.fetchall():
+                        all_leagues[esporte or 'Desconhecido'] = all_leagues.get(esporte or 'Desconhecido', 0) + count
                     
                     # Top bookmakers
                     cursor.execute("""
                         SELECT bookmaker, COUNT(*) as count 
                         FROM alert_history 
-                        WHERE DATE(created_at) >= DATE('now', '-7 days')
+                        WHERE DATE(data_envio) >= DATE('now', '-7 days')
                         GROUP BY bookmaker 
                         ORDER BY count DESC 
                         LIMIT 10
                     """)
                     for bookmaker, count in cursor.fetchall():
-                        all_bookmakers[bookmaker] = all_bookmakers.get(bookmaker, 0) + count
+                        all_bookmakers[bookmaker or 'Desconhecido'] = all_bookmakers.get(bookmaker or 'Desconhecido', 0) + count
                     
                     # Análise de horários
                     cursor.execute("""
-                        SELECT strftime('%H', created_at) as hour, COUNT(*) as count 
+                        SELECT strftime('%H', data_envio) as hour, COUNT(*) as count 
                         FROM alert_history 
-                        WHERE DATE(created_at) >= DATE('now', '-7 days')
+                        WHERE DATE(data_envio) >= DATE('now', '-7 days')
                         GROUP BY hour 
                         ORDER BY hour
                     """)
@@ -406,7 +406,7 @@ class BotMonitor:
                     print(f"Erro ao analisar feed {feed}: {e}")
         
         return {
-            'top_leagues': sorted(all_leagues.items(), key=lambda x: x[1], reverse=True)[:10],
+            'top_esportes': sorted(all_leagues.items(), key=lambda x: x[1], reverse=True)[:10],
             'top_bookmakers': sorted(all_bookmakers.items(), key=lambda x: x[1], reverse=True)[:10],
             'hourly_distribution': dict(sorted(all_hours.items()))
         }

@@ -601,8 +601,8 @@
             <h2>📊 Análises</h2>
             <div class="analytics-grid">
                 <div class="analytics-card">
-                    <h3>🏆 Top Ligas</h3>
-                    <div id="top-leagues">Carregando...</div>
+                    <h3>🏆 Top Esportes</h3>
+                    <div id="top-esportes">Carregando...</div>
                 </div>
 
                 <div class="analytics-card">
@@ -982,15 +982,15 @@
                     return;
                 }
                 
-                // Top ligas
-                let leaguesHtml = '';
-                if (data.top_leagues && data.top_leagues.length > 0) {
-                    const maxCount = Math.max(...data.top_leagues.map(item => item[1]));
-                    data.top_leagues.forEach(([league, count]) => {
+                // Top esportes
+                let esportesHtml = '';
+                if (data.top_esportes && data.top_esportes.length > 0) {
+                    const maxCount = Math.max(...data.top_esportes.map(item => item[1]));
+                    data.top_esportes.forEach(([esporte, count]) => {
                         const percentage = (count / maxCount) * 100;
-                        leaguesHtml += `
+                        esportesHtml += `
                             <div class="analytics-item">
-                                <span class="analytics-label">${league}</span>
+                                <span class="analytics-label">${esporte}</span>
                                 <span class="analytics-value">${count}</span>
                             </div>
                             <div class="analytics-bar">
@@ -999,9 +999,9 @@
                         `;
                     });
                 } else {
-                    leaguesHtml = '<div class="analytics-item">Nenhum dado disponível</div>';
+                    esportesHtml = '<div class="analytics-item">Nenhum dado disponível</div>';
                 }
-                document.getElementById('top-leagues').innerHTML = leaguesHtml;
+                document.getElementById('top-esportes').innerHTML = esportesHtml;
                 
                 // Top bookmakers
                 let bookmakersHtml = '';
