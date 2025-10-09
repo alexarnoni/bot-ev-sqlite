@@ -76,6 +76,162 @@
             color: #2c3e50;
         }
 
+        .control-section, .analytics-section {
+            margin: 30px 0;
+        }
+
+        .control-section h2, .analytics-section h2 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+
+        .control-grid, .analytics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+        }
+
+        .control-card, .analytics-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .control-btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9em;
+        }
+
+        .control-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .restart-all {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+        }
+
+        .clear-cache {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            color: white;
+        }
+
+        .backup-btn {
+            background: linear-gradient(135deg, #27ae60, #229954);
+            color: white;
+        }
+
+        .restore-btn {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+        }
+
+        .feed-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+
+        .feed-control-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px;
+            background: rgba(52, 152, 219, 0.1);
+            border-radius: 8px;
+            border: 1px solid rgba(52, 152, 219, 0.2);
+        }
+
+        .feed-control-item h4 {
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+            font-size: 0.9em;
+        }
+
+        .feed-control-buttons {
+            display: flex;
+            gap: 5px;
+        }
+
+        .feed-btn {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 0.8em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .start-btn {
+            background: #27ae60;
+            color: white;
+        }
+
+        .stop-btn {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .restart-btn {
+            background: #f39c12;
+            color: white;
+        }
+
+        .analytics-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .analytics-item:last-child {
+            border-bottom: none;
+        }
+
+        .analytics-label {
+            font-weight: 500;
+            color: #34495e;
+        }
+
+        .analytics-value {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .analytics-bar {
+            width: 100%;
+            height: 8px;
+            background: #ecf0f1;
+            border-radius: 4px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+
+        .analytics-bar-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -274,6 +430,61 @@
             <div class="stat-card">
                 <h3>📊 Alertas</h3>
                 <div id="alerts-stats" class="loading">Carregando...</div>
+            </div>
+        </div>
+
+        <!-- Nova seção de controle -->
+        <div class="control-section">
+            <h2>🎛️ Controle do Sistema</h2>
+            <div class="control-grid">
+                <div class="control-card">
+                    <h3>🔄 Controle de Feeds</h3>
+                    <div class="control-buttons">
+                        <button class="control-btn restart-all" onclick="restartAllFeeds()">
+                            🔄 Reiniciar Todos
+                        </button>
+                        <button class="control-btn clear-cache" onclick="clearCache()">
+                            🗑️ Limpar Cache
+                        </button>
+                    </div>
+                    <div class="feed-controls" id="feed-controls">
+                        <!-- Será preenchido dinamicamente -->
+                    </div>
+                </div>
+
+                <div class="control-card">
+                    <h3>💾 Backup & Restore</h3>
+                    <div class="control-buttons">
+                        <button class="control-btn backup-btn" onclick="backupDatabase()">
+                            💾 Fazer Backup
+                        </button>
+                        <button class="control-btn restore-btn" onclick="showRestoreOptions()">
+                            📥 Restaurar
+                        </button>
+                    </div>
+                    <div id="backup-status"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nova seção de análises -->
+        <div class="analytics-section">
+            <h2>📊 Análises</h2>
+            <div class="analytics-grid">
+                <div class="analytics-card">
+                    <h3>🏆 Top Ligas</h3>
+                    <div id="top-leagues">Carregando...</div>
+                </div>
+
+                <div class="analytics-card">
+                    <h3>🏪 Top Bookmakers</h3>
+                    <div id="top-bookmakers">Carregando...</div>
+                </div>
+
+                <div class="analytics-card">
+                    <h3>⏰ Distribuição por Horário</h3>
+                    <div id="hourly-distribution">Carregando...</div>
+                </div>
             </div>
         </div>
 
@@ -566,6 +777,153 @@
             loadLogs();
         }
 
+        // Carregar análises
+        async function loadAnalytics() {
+            try {
+                const response = await fetch('/api/stats/analytics');
+                const data = await response.json();
+                
+                if (data.error) {
+                    console.error('Erro nas análises:', data.error);
+                    return;
+                }
+                
+                // Top ligas
+                let leaguesHtml = '';
+                if (data.top_leagues && data.top_leagues.length > 0) {
+                    const maxCount = Math.max(...data.top_leagues.map(item => item[1]));
+                    data.top_leagues.forEach(([league, count]) => {
+                        const percentage = (count / maxCount) * 100;
+                        leaguesHtml += `
+                            <div class="analytics-item">
+                                <span class="analytics-label">${league}</span>
+                                <span class="analytics-value">${count}</span>
+                            </div>
+                            <div class="analytics-bar">
+                                <div class="analytics-bar-fill" style="width: ${percentage}%"></div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    leaguesHtml = '<div class="analytics-item">Nenhum dado disponível</div>';
+                }
+                document.getElementById('top-leagues').innerHTML = leaguesHtml;
+                
+                // Top bookmakers
+                let bookmakersHtml = '';
+                if (data.top_bookmakers && data.top_bookmakers.length > 0) {
+                    const maxCount = Math.max(...data.top_bookmakers.map(item => item[1]));
+                    data.top_bookmakers.forEach(([bookmaker, count]) => {
+                        const percentage = (count / maxCount) * 100;
+                        bookmakersHtml += `
+                            <div class="analytics-item">
+                                <span class="analytics-label">${bookmaker}</span>
+                                <span class="analytics-value">${count}</span>
+                            </div>
+                            <div class="analytics-bar">
+                                <div class="analytics-bar-fill" style="width: ${percentage}%"></div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    bookmakersHtml = '<div class="analytics-item">Nenhum dado disponível</div>';
+                }
+                document.getElementById('top-bookmakers').innerHTML = bookmakersHtml;
+                
+                // Distribuição por horário
+                let hoursHtml = '';
+                if (data.hourly_distribution && Object.keys(data.hourly_distribution).length > 0) {
+                    const maxCount = Math.max(...Object.values(data.hourly_distribution));
+                    Object.entries(data.hourly_distribution).forEach(([hour, count]) => {
+                        const percentage = (count / maxCount) * 100;
+                        hoursHtml += `
+                            <div class="analytics-item">
+                                <span class="analytics-label">${hour}:00</span>
+                                <span class="analytics-value">${count}</span>
+                            </div>
+                            <div class="analytics-bar">
+                                <div class="analytics-bar-fill" style="width: ${percentage}%"></div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    hoursHtml = '<div class="analytics-item">Nenhum dado disponível</div>';
+                }
+                document.getElementById('hourly-distribution').innerHTML = hoursHtml;
+                
+            } catch (error) {
+                console.error('Erro ao carregar análises:', error);
+            }
+        }
+
+        // Funções de controle
+        async function restartAllFeeds() {
+            if (!confirm('Tem certeza que deseja reiniciar todos os feeds?')) return;
+            
+            try {
+                const response = await fetch('/api/actions/restart_all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                
+                if (data.message) {
+                    alert('✅ ' + data.message);
+                    loadAllData(); // Recarrega dados
+                } else {
+                    alert('❌ ' + data.error);
+                }
+            } catch (error) {
+                alert('❌ Erro: ' + error.message);
+            }
+        }
+
+        async function clearCache() {
+            if (!confirm('Tem certeza que deseja limpar o cache?')) return;
+            
+            try {
+                const response = await fetch('/api/actions/clear_cache', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                
+                if (data.message) {
+                    alert('✅ ' + data.message);
+                } else {
+                    alert('❌ ' + data.error);
+                }
+            } catch (error) {
+                alert('❌ Erro: ' + error.message);
+            }
+        }
+
+        async function backupDatabase() {
+            try {
+                const response = await fetch('/api/actions/backup_db', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ feed_id: 'default' })
+                });
+                const data = await response.json();
+                
+                if (data.message) {
+                    document.getElementById('backup-status').innerHTML = 
+                        '<div style="color: green; margin-top: 10px;">✅ ' + data.message + '</div>';
+                } else {
+                    document.getElementById('backup-status').innerHTML = 
+                        '<div style="color: red; margin-top: 10px;">❌ ' + data.error + '</div>';
+                }
+            } catch (error) {
+                document.getElementById('backup-status').innerHTML = 
+                    '<div style="color: red; margin-top: 10px;">❌ Erro: ' + error.message + '</div>';
+            }
+        }
+
+        function showRestoreOptions() {
+            alert('Funcionalidade de restore será implementada em breve!');
+        }
+
         // Carregar todos os dados
         async function loadAllData() {
             await Promise.all([
@@ -573,6 +931,7 @@
                 loadUsersStats(),
                 loadAlertsStats(),
                 loadGlobalStats(), // Substitui loadFeedsStatus()
+                loadAnalytics(),
                 loadLogs()
             ]);
         }

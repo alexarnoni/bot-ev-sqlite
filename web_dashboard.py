@@ -349,6 +349,67 @@ class BotMonitor:
             'total_alerts_today': all_alerts,
             'feed_stats': feed_stats
         }
+    
+    def get_analytics_stats(self) -> Dict[str, Any]:
+        """Retorna estatísticas analíticas"""
+        feeds = ["default", "feed1", "feed2", "feed3", "feed4", "feed_test"]
+        
+        # Coleta dados de todos os feeds
+        all_leagues = {}
+        all_bookmakers = {}
+        all_hours = {}
+        
+        for feed in feeds:
+            feed_db_path = os.path.join(os.getcwd(), "data", feed, "bot.db")
+            if os.path.exists(feed_db_path):
+                try:
+                    conn = sqlite3.connect(feed_db_path)
+                    cursor = conn.cursor()
+                    
+                    # Top ligas
+                    cursor.execute("""
+                        SELECT league, COUNT(*) as count 
+                        FROM alertas 
+                        WHERE DATE(data_envio) >= DATE('now', '-7 days')
+                        GROUP BY league 
+                        ORDER BY count DESC 
+                        LIMIT 10
+                    """)
+                    for league, count in cursor.fetchall():
+                        all_leagues[league] = all_leagues.get(league, 0) + count
+                    
+                    # Top bookmakers
+                    cursor.execute("""
+                        SELECT bookmaker, COUNT(*) as count 
+                        FROM alertas 
+                        WHERE DATE(data_envio) >= DATE('now', '-7 days')
+                        GROUP BY bookmaker 
+                        ORDER BY count DESC 
+                        LIMIT 10
+                    """)
+                    for bookmaker, count in cursor.fetchall():
+                        all_bookmakers[bookmaker] = all_bookmakers.get(bookmaker, 0) + count
+                    
+                    # Análise de horários
+                    cursor.execute("""
+                        SELECT strftime('%H', data_envio) as hour, COUNT(*) as count 
+                        FROM alertas 
+                        WHERE DATE(data_envio) >= DATE('now', '-7 days')
+                        GROUP BY hour 
+                        ORDER BY hour
+                    """)
+                    for hour, count in cursor.fetchall():
+                        all_hours[hour] = all_hours.get(hour, 0) + count
+                    
+                    conn.close()
+                except Exception as e:
+                    print(f"Erro ao analisar feed {feed}: {e}")
+        
+        return {
+            'top_leagues': sorted(all_leagues.items(), key=lambda x: x[1], reverse=True)[:10],
+            'top_bookmakers': sorted(all_bookmakers.items(), key=lambda x: x[1], reverse=True)[:10],
+            'hourly_distribution': dict(sorted(all_hours.items()))
+        }
 
 # Instância global do monitor
 monitor = BotMonitor()
@@ -389,6 +450,59 @@ def api_global_stats():
     """API para estatísticas globais de todos os feeds"""
     return jsonify(monitor.get_global_stats())
 
+@app.route('/api/stats/analytics')
+def api_analytics_stats():
+    """API para estatísticas analíticas"""
+    return jsonify(monitor.get_analytics_stats())
+
+@app.route('/api/actions/start_feed', methods=['POST'])
+def api_start_feed():
+    """API para iniciar um feed"""
+    try:
+        data = request.get_json()
+        feed_id = data.get('feed_id')
+        
+        if not feed_id:
+            return jsonify({'error': 'Feed ID é obrigatório'}), 400
+        
+        import subprocess
+        result = subprocess.run(
+            [f'./start_feed.sh', feed_id],
+            capture_output=True, text=True, timeout=30
+        )
+        
+        if result.returncode == 0:
+            return jsonify({'message': f'Feed {feed_id} iniciado com sucesso'})
+        else:
+            return jsonify({'error': f'Erro ao iniciar feed: {result.stderr}'}), 500
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/actions/stop_feed', methods=['POST'])
+def api_stop_feed():
+    """API para parar um feed"""
+    try:
+        data = request.get_json()
+        feed_id = data.get('feed_id')
+        
+        if not feed_id:
+            return jsonify({'error': 'Feed ID é obrigatório'}), 400
+        
+        import subprocess
+        result = subprocess.run(
+            [f'./stop_feed.sh', feed_id],
+            capture_output=True, text=True, timeout=30
+        )
+        
+        if result.returncode == 0:
+            return jsonify({'message': f'Feed {feed_id} parado com sucesso'})
+        else:
+            return jsonify({'error': f'Erro ao parar feed: {result.stderr}'}), 500
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/actions/restart_feed', methods=['POST'])
 def api_restart_feed():
     """API para reiniciar um feed"""
@@ -410,6 +524,71 @@ def api_restart_feed():
         return jsonify({'success': True, 'message': f'Feed {feed} reiniciado'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/actions/restart_all', methods=['POST'])
+def api_restart_all():
+    """API para reiniciar todos os feeds"""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['./stop_all_feeds.sh'],
+            capture_output=True, text=True, timeout=60
+        )
+        
+        import time
+        time.sleep(3)
+        
+        result2 = subprocess.run(
+            ['./start_all_feeds.sh'],
+            capture_output=True, text=True, timeout=60
+        )
+        
+        if result2.returncode == 0:
+            return jsonify({'message': 'Todos os feeds reiniciados com sucesso'})
+        else:
+            return jsonify({'error': f'Erro ao reiniciar feeds: {result2.stderr}'}), 500
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/actions/clear_cache', methods=['POST'])
+def api_clear_cache():
+    """API para limpar cache de alertas"""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['find', 'cache', '-name', '*.cache', '-delete'],
+            capture_output=True, text=True, timeout=30
+        )
+        
+        return jsonify({'message': 'Cache limpo com sucesso'})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/actions/backup_db', methods=['POST'])
+def api_backup_db():
+    """API para fazer backup do banco de dados"""
+    try:
+        data = request.get_json()
+        feed_id = data.get('feed_id', 'default')
+        
+        import shutil
+        from datetime import datetime
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        source_db = os.path.join(os.getcwd(), "data", feed_id, "bot.db")
+        backup_path = os.path.join(os.getcwd(), "backups", f"bot_{feed_id}_{timestamp}.db")
+        
+        # Cria diretório de backup se não existir
+        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+        
+        shutil.copy2(source_db, backup_path)
+        
+        return jsonify({'message': f'Backup criado: {backup_path}'})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     print(f"🚀 Iniciando Dashboard Web...")
