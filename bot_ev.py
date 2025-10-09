@@ -109,7 +109,7 @@ class AlertSender:
             link_html = f'<a href="{link_evento}">Abrir na {bookmaker_fmt}</a>' if link_evento else f'Abrir na {bookmaker_fmt}'
             
             # MENSAGEM INSTANTÂNEA COM DESTAQUE ESPECIAL
-            mensagem = f"""🚨 <b>ALERTA INSTANTÂNEO - EV ALTO!</b> 🚨
+            mensagem = f"""<b>ALERTA INSTANTÂNEO - EV ALTO!</b>
 
 {emoji_esporte} <b>{home}</b> vs <b>{away}</b>
 {bandeira_pais} {league}
@@ -233,18 +233,86 @@ class AlertSender:
     def _get_emoji_esporte(self, sport: str) -> str:
         """
         Retorna emoji baseado no esporte
+        Focado nos esportes disponíveis na API Odds
         """
         emojis = {
+            # Esportes principais da API Odds
+            'football': '⚽',
             'soccer': '⚽',
             'basketball': '🏀',
             'tennis': '🎾',
+            'baseball': '⚾',
+            'ice hockey': '🏒',
+            'icehockey': '🏒',
+            
+            # Esportes adicionais que podem aparecer
             'volleyball': '🏐',
             'handball': '🤾',
             'americanfootball': '🏈',
-            'baseball': '⚾',
-            'icehockey': '🏒',
+            'american football': '🏈',
             'cricket': '🏏',
-            'rugby': '🏉'
+            'rugby': '🏉',
+            'rugby league': '🏉',
+            'rugby union': '🏉',
+            
+            # Esportes de combate
+            'boxing': '🥊',
+            'mma': '🥊',
+            'ufc': '🥊',
+            'kickboxing': '🥊',
+            'muay thai': '🥊',
+            'karate': '🥊',
+            'taekwondo': '🥊',
+            
+            # Esportes de raquete
+            'table tennis': '🏓',
+            'badminton': '🏸',
+            'squash': '🏸',
+            'racquetball': '🏸',
+            
+            # Esports
+            'esports': '🎮',
+            'csgo': '🎮',
+            'counter-strike': '🎮',
+            'dota': '🎮',
+            'lol': '🎮',
+            'league of legends': '🎮',
+            'valorant': '🎮',
+            'overwatch': '🎮',
+            'rocket league': '🎮',
+            
+            # Esportes automobilísticos
+            'formula 1': '🏎️',
+            'f1': '🏎️',
+            'motogp': '🏍️',
+            'nascar': '🏎️',
+            'indycar': '🏎️',
+            'rally': '🏎️',
+            'wrc': '🏎️',
+            
+            # Outros esportes
+            'golf': '⛳',
+            'snooker': '🎱',
+            'pool': '🎱',
+            'billiards': '🎱',
+            'darts': '🎯',
+            'archery': '🏹',
+            'swimming': '🏊',
+            'athletics': '🏃',
+            'cycling': '🚴',
+            'equestrian': '🏇',
+            'gymnastics': '🤸',
+            'water polo': '🤽',
+            'wrestling': '🤼',
+            'fencing': '🤺',
+            'weightlifting': '🏋️',
+            'juggling': '🤹',
+            'surfing': '🏄',
+            'skateboarding': '🛹',
+            'snowboarding': '🏂',
+            'skiing': '⛷️',
+            'ice skating': '⛸️',
+            'figure skating': '⛸️'
         }
         return emojis.get(sport.lower(), '🏆')
 
