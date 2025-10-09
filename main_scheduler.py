@@ -239,13 +239,13 @@ class BotScheduler:
                     await enviar_alertas_batch(chat_id, batch)
                     alertas_enviados += len(batch)
                 
-                # Adiciona ao cache e histórico
-                for evento, stake in batch:
-                    self.cache.add_alert(chat_id, evento)
-                    self.history.add_alert(chat_id, evento, stake)
+                    # Adiciona ao cache e histórico
+                    for evento, stake in batch:
+                        self.cache.add_alert(chat_id, evento)
+                        self.history.add_alert(chat_id, evento, stake)
                 
-            except Exception as e:
-                logger_scan.error(f"❌ Erro ao enviar batch para {chat_id}: {e}")
+                except Exception as e:
+                    logger_scan.error(f"❌ Erro ao enviar batch para {chat_id}: {e}")
         
         return alertas_enviados
     
