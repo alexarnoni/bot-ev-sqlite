@@ -46,6 +46,36 @@
             font-size: 1.1em;
         }
 
+        .global-stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .global-stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 15px;
+            background: rgba(52, 152, 219, 0.1);
+            border-radius: 10px;
+            border: 2px solid rgba(52, 152, 219, 0.2);
+        }
+
+        .global-label {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            margin-bottom: 5px;
+        }
+
+        .global-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -428,6 +458,93 @@
             }
         }
 
+        // Carregar estatísticas globais
+        async function loadGlobalStats() {
+            try {
+                const response = await fetch('/api/stats/global');
+                const data = await response.json();
+                
+                if (data.error) {
+                    console.error('Erro nas estatísticas globais:', data.error);
+                    return;
+                }
+                
+                // Atualizar header com estatísticas globais
+                const header = document.querySelector('.header');
+                if (header && !header.querySelector('.global-stats')) {
+                    const globalStatsHTML = `
+                        <div class="global-stats">
+                            <div class="global-stat-item">
+                                <span class="global-label">📊 Feeds Ativos:</span>
+                                <span class="global-value">${data.active_feeds}/${data.total_feeds}</span>
+                            </div>
+                            <div class="global-stat-item">
+                                <span class="global-label">👥 Usuários Únicos:</span>
+                                <span class="global-value">${formatNumber(data.unique_users)}</span>
+                            </div>
+                            <div class="global-stat-item">
+                                <span class="global-label">📈 Alertas Hoje:</span>
+                                <span class="global-value">${formatNumber(data.total_alerts_today)}</span>
+                            </div>
+                        </div>
+                    `;
+                    header.insertAdjacentHTML('beforeend', globalStatsHTML);
+                }
+                
+                // Atualizar estatísticas dos feeds com dados globais
+                updateFeedsWithGlobalData(data.feed_stats);
+                
+            } catch (error) {
+                console.error('Erro ao carregar estatísticas globais:', error);
+            }
+        }
+        
+        // Atualizar feeds com dados globais
+        function updateFeedsWithGlobalData(feedStats) {
+            const feedsContainer = document.getElementById('feeds-status');
+            if (!feedsContainer) return;
+            
+            let html = '';
+            for (const [feed, stats] of Object.entries(feedStats)) {
+                const statusClass = stats.status === 'active' ? 'active' : 
+                                  stats.status === 'inactive' ? 'inactive' : 'error';
+                const statusText = stats.status === 'active' ? 'Ativo' : 
+                                 stats.status === 'inactive' ? 'Inativo' : 'Erro';
+                
+                html += `
+                    <div class="stat-card">
+                        <h3>🔄 ${feed.toUpperCase()}</h3>
+                        <div class="feed-name">${feed}</div>
+                        <div class="stat-item">
+                            <span class="stat-label">Status:</span>
+                            <span class="stat-value">
+                                <span class="status-indicator ${statusClass}"></span>
+                                ${statusText}
+                            </span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Listener:</span>
+                            <span class="stat-value">${stats.listener_running ? '✅' : '❌'}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Scheduler:</span>
+                            <span class="stat-value">${stats.scheduler_running ? '✅' : '❌'}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Usuários:</span>
+                            <span class="stat-value">${formatNumber(stats.active_users)}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Alertas Hoje:</span>
+                            <span class="stat-value">${formatNumber(stats.alerts_today)}</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            feedsContainer.innerHTML = html;
+        }
+
         // Carregar logs
         async function loadLogs() {
             try {
@@ -455,7 +572,7 @@
                 loadSystemStats(),
                 loadUsersStats(),
                 loadAlertsStats(),
-                loadFeedsStatus(),
+                loadGlobalStats(), // Substitui loadFeedsStatus()
                 loadLogs()
             ]);
         }

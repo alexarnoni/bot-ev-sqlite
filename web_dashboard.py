@@ -273,6 +273,82 @@ class BotMonitor:
                 return all_lines[-lines:] if len(all_lines) > lines else all_lines
         except Exception as e:
             return [f"Error reading logs: {str(e)}"]
+    
+    def get_global_stats(self) -> Dict[str, Any]:
+        """Retorna estatísticas globais de todos os feeds"""
+        feeds = ["default", "feed1", "feed2", "feed3", "feed4", "feed_test"]
+        
+        # Coleta dados de todos os feeds
+        all_users = set()
+        all_alerts = 0
+        feed_stats = {}
+        
+        for feed in feeds:
+            feed_db_path = os.path.join(os.getcwd(), "data", feed, "bot.db")
+            if os.path.exists(feed_db_path):
+                try:
+                    conn = sqlite3.connect(feed_db_path)
+                    cursor = conn.cursor()
+                    
+                    # Usuários ativos
+                    cursor.execute("SELECT COUNT(*) FROM users WHERE is_active = 1")
+                    active_users = cursor.fetchone()[0]
+                    
+                    # Usuários únicos (chat_ids)
+                    cursor.execute("SELECT chat_id FROM users WHERE is_active = 1")
+                    for row in cursor.fetchall():
+                        all_users.add(row[0])
+                    
+                    # Alertas hoje
+                    today = datetime.now().strftime('%Y-%m-%d')
+                    cursor.execute("SELECT COUNT(*) FROM alertas WHERE DATE(data_envio) = ?", (today,))
+                    alerts_today = cursor.fetchone()[0]
+                    all_alerts += alerts_today
+                    
+                    # Status dos processos
+                    import subprocess
+                    result = subprocess.run(
+                        ['tmux', 'list-sessions', '-F', '#{session_name}'],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    
+                    listener_running = f"listener_{feed}" in result.stdout
+                    scheduler_running = f"main_{feed}" in result.stdout
+                    
+                    feed_stats[feed] = {
+                        'active_users': active_users,
+                        'alerts_today': alerts_today,
+                        'listener_running': listener_running,
+                        'scheduler_running': scheduler_running,
+                        'status': 'active' if (listener_running and scheduler_running) else 'inactive'
+                    }
+                    
+                    conn.close()
+                except Exception as e:
+                    feed_stats[feed] = {
+                        'active_users': 0,
+                        'alerts_today': 0,
+                        'listener_running': False,
+                        'scheduler_running': False,
+                        'status': 'error',
+                        'error': str(e)
+                    }
+            else:
+                feed_stats[feed] = {
+                    'active_users': 0,
+                    'alerts_today': 0,
+                    'listener_running': False,
+                    'scheduler_running': False,
+                    'status': 'no_db'
+                }
+        
+        return {
+            'total_feeds': len(feeds),
+            'active_feeds': sum(1 for f in feed_stats.values() if f['status'] == 'active'),
+            'unique_users': len(all_users),
+            'total_alerts_today': all_alerts,
+            'feed_stats': feed_stats
+        }
 
 # Instância global do monitor
 monitor = BotMonitor()
@@ -307,6 +383,11 @@ def api_logs():
     """API para logs recentes"""
     lines = request.args.get('lines', 50, type=int)
     return jsonify({'logs': monitor.get_recent_logs(lines)})
+
+@app.route('/api/stats/global')
+def api_global_stats():
+    """API para estatísticas globais de todos os feeds"""
+    return jsonify(monitor.get_global_stats())
 
 @app.route('/api/actions/restart_feed', methods=['POST'])
 def api_restart_feed():
