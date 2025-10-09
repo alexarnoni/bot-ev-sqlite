@@ -233,20 +233,23 @@ class AlertSender:
     def _get_emoji_esporte(self, sport: str) -> str:
         """
         Retorna emoji baseado no esporte
+        Focado nos esportes disponíveis na API Odds
         """
         emojis = {
-            # Esportes principais
-            'soccer': '⚽',
+            # Esportes principais da API Odds
             'football': '⚽',
+            'soccer': '⚽',
             'basketball': '🏀',
             'tennis': '🎾',
+            'baseball': '⚾',
+            'ice hockey': '🏒',
+            'icehockey': '🏒',
+            
+            # Esportes adicionais que podem aparecer
             'volleyball': '🏐',
             'handball': '🤾',
             'americanfootball': '🏈',
             'american football': '🏈',
-            'baseball': '⚾',
-            'icehockey': '🏒',
-            'ice hockey': '🏒',
             'cricket': '🏏',
             'rugby': '🏉',
             'rugby league': '🏉',
