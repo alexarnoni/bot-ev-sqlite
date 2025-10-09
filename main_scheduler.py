@@ -221,6 +221,7 @@ class BotScheduler:
         alertas_enviados = 0
         for evento, stake in alertas_instantaneos:
             try:
+                # Import local para evitar circular import
                 from bot_ev import enviar_alerta_instantaneo
                 await enviar_alerta_instantaneo(chat_id, evento, stake)
                 alertas_enviados += 1
