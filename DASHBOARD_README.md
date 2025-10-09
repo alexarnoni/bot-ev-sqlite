@@ -12,10 +12,13 @@ pip install -r requirements_dashboard.txt
 
 ### 2. Iniciar o dashboard
 ```bash
-# Opção 1: Script automático
+# Opção 1: Em sessão tmux (RECOMENDADO - pode fechar a VM)
+./start_dashboard_tmux.sh
+
+# Opção 2: Script automático (mantém VM aberta)
 ./start_dashboard.sh
 
-# Opção 2: Manual
+# Opção 3: Manual
 python3 web_dashboard.py
 ```
 
@@ -107,11 +110,32 @@ ip addr show
 
 ### Estrutura dos arquivos
 ```
-web_dashboard.py          # Servidor Flask principal
+web_dashboard.py              # Servidor Flask principal
 templates/
-  └── dashboard.html      # Interface web
-requirements_dashboard.txt # Dependências
-start_dashboard.sh        # Script de inicialização
+  └── dashboard.html          # Interface web
+requirements_dashboard.txt    # Dependências
+start_dashboard.sh            # Script de inicialização (VM aberta)
+start_dashboard_tmux.sh       # Script para tmux (VM pode fechar)
+stop_dashboard.sh             # Script para parar dashboard
+monitor_dashboard.sh          # Script para monitorar status
+```
+
+### Comandos tmux
+```bash
+# Iniciar dashboard em tmux
+./start_dashboard_tmux.sh
+
+# Parar dashboard
+./stop_dashboard.sh
+
+# Ver status
+./monitor_dashboard.sh
+
+# Conectar à sessão (ver logs)
+tmux attach -t dashboard_web
+
+# Sair da sessão sem parar (Ctrl+B depois D)
+# Ou simplesmente fechar o terminal
 ```
 
 ### APIs disponíveis
