@@ -87,10 +87,10 @@ def formatar_tempo_segundos(segundos: int) -> str:
 
 def formatar_data_brasileira(data_str: str) -> str:
     """
-    Formata data para formato brasileiro
+    Formata data para formato brasileiro (horário de Brasília)
     """
     try:
-        from datetime import datetime
+        from datetime import datetime, timezone, timedelta
         
         # Parse da data
         if 'T' in data_str:
@@ -98,8 +98,16 @@ def formatar_data_brasileira(data_str: str) -> str:
         else:
             data = datetime.strptime(data_str, "%Y-%m-%d %H:%M:%S")
         
+        # Se não tem timezone, assume UTC
+        if data.tzinfo is None:
+            data = data.replace(tzinfo=timezone.utc)
+        
+        # Converte para horário de Brasília (UTC-3)
+        brasilia_tz = timezone(timedelta(hours=-3))
+        data_brasilia = data.astimezone(brasilia_tz)
+        
         # Formata para brasileiro
-        return data.strftime("%d/%m/%Y %H:%M")
+        return data_brasilia.strftime("%d/%m/%Y %H:%M")
         
     except Exception:
         return data_str
