@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot EV+ Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .header .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 1.1em;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 5px;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .stat-item:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            font-weight: 500;
+            color: #34495e;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-active {
+            background-color: #27ae60;
+            box-shadow: 0 0 10px rgba(39, 174, 96, 0.5);
+        }
+
+        .status-inactive {
+            background-color: #e74c3c;
+            box-shadow: 0 0 10px rgba(231, 76, 60, 0.5);
+        }
+
+        .status-error {
+            background-color: #f39c12;
+            box-shadow: 0 0 10px rgba(243, 156, 18, 0.5);
+        }
+
+        .feeds-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .feed-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .feed-name {
+            font-weight: bold;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        .logs-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .logs-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .logs-content {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .refresh-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background 0.3s ease;
+        }
+
+        .refresh-btn:hover {
+            background: #2980b9;
+        }
+
+        .loading {
+            text-align: center;
+            color: #7f8c8d;
+            font-style: italic;
+        }
+
+        .error {
+            color: #e74c3c;
+            background: #fdf2f2;
+            padding: 10px;
+            border-radius: 8px;
+            border-left: 4px solid #e74c3c;
+        }
+
+        .success {
+            color: #27ae60;
+            background: #f0f9f0;
+            padding: 10px;
+            border-radius: 8px;
+            border-left: 4px solid #27ae60;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Bot EV+ Dashboard</h1>
+            <div class="subtitle">Monitoramento em Tempo Real</div>
+        </div>
+
+        <div class="stats-grid">
+            <!-- Sistema -->
+            <div class="stat-card">
+                <h3>💻 Sistema</h3>
+                <div id="system-stats" class="loading">Carregando...</div>
+            </div>
+
+            <!-- Usuários -->
+            <div class="stat-card">
+                <h3>👥 Usuários</h3>
+                <div id="users-stats" class="loading">Carregando...</div>
+            </div>
+
+            <!-- Alertas -->
+            <div class="stat-card">
+                <h3>📊 Alertas</h3>
+                <div id="alerts-stats" class="loading">Carregando...</div>
+            </div>
+        </div>
+
+        <!-- Feeds -->
+        <div class="stat-card">
+            <h3>🔄 Status dos Feeds</h3>
+            <div id="feeds-status" class="feeds-grid loading">Carregando...</div>
+        </div>
+
+        <!-- Logs -->
+        <div class="logs-container">
+            <div class="logs-header">
+                <h3>📝 Logs Recentes</h3>
+                <button class="refresh-btn" onclick="refreshLogs()">🔄 Atualizar</button>
+            </div>
+            <div id="logs-content" class="logs-content">Carregando logs...</div>
+        </div>
+    </div>
+
+    <script>
+        // Função para formatar números
+        function formatNumber(num) {
+            return num.toLocaleString('pt-BR');
+        }
+
+        // Função para formatar porcentagem
+        function formatPercent(num) {
+            return num.toFixed(1) + '%';
+        }
+
+        // Função para formatar data
+        function formatDate(dateStr) {
+            if (!dateStr) return 'N/A';
+            const date = new Date(dateStr);
+            return date.toLocaleString('pt-BR');
+        }
+
+        // Carregar estatísticas do sistema
+        async function loadSystemStats() {
+            try {
+                const response = await fetch('/api/stats/system');
+                const data = await response.json();
+                
+                if (data.error) {
+                    document.getElementById('system-stats').innerHTML = 
+                        `<div class="error">Erro: ${data.error}</div>`;
+                    return;
+                }
+
+                const html = `
+                    <div class="stat-item">
+                        <span class="stat-label">CPU:</span>
+                        <span class="stat-value">${formatPercent(data.cpu_percent)}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Memória:</span>
+                        <span class="stat-value">${formatPercent(data.memory_percent)} (${data.memory_used_gb}GB / ${data.memory_total_gb}GB)</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Disco:</span>
+                        <span class="stat-value">${formatPercent(data.disk_percent)} (${data.disk_used_gb}GB / ${data.disk_total_gb}GB)</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Processos Python:</span>
+                        <span class="stat-value">${data.python_processes.length}</span>
+                    </div>
+                `;
+                
+                document.getElementById('system-stats').innerHTML = html;
+            } catch (error) {
+                document.getElementById('system-stats').innerHTML = 
+                    `<div class="error">Erro ao carregar: ${error.message}</div>`;
+            }
+        }
+
+        // Carregar estatísticas dos usuários
+        async function loadUsersStats() {
+            try {
+                const response = await fetch('/api/stats/users');
+                const data = await response.json();
+                
+                if (data.error) {
+                    document.getElementById('users-stats').innerHTML = 
+                        `<div class="error">Erro: ${data.error}</div>`;
+                    return;
+                }
+
+                const html = `
+                    <div class="stat-item">
+                        <span class="stat-label">Total:</span>
+                        <span class="stat-value">${formatNumber(data.total_users)}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Ativos:</span>
+                        <span class="stat-value">${formatNumber(data.active_users)}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Configurados:</span>
+                        <span class="stat-value">${formatNumber(data.configured_users)}</span>
+                    </div>
+                `;
+                
+                document.getElementById('users-stats').innerHTML = html;
+            } catch (error) {
+                document.getElementById('users-stats').innerHTML = 
+                    `<div class="error">Erro ao carregar: ${error.message}</div>`;
+            }
+        }
+
+        // Carregar estatísticas dos alertas
+        async function loadAlertsStats() {
+            try {
+                const response = await fetch('/api/stats/alerts');
+                const data = await response.json();
+                
+                if (data.error) {
+                    document.getElementById('alerts-stats').innerHTML = 
+                        `<div class="error">Erro: ${data.error}</div>`;
+                    return;
+                }
+
+                const html = `
+                    <div class="stat-item">
+                        <span class="stat-label">Hoje:</span>
+                        <span class="stat-value">${formatNumber(data.alerts_today)}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Esta semana:</span>
+                        <span class="stat-value">${formatNumber(data.alerts_week)}</span>
+                    </div>
+                `;
+                
+                document.getElementById('alerts-stats').innerHTML = html;
+            } catch (error) {
+                document.getElementById('alerts-stats').innerHTML = 
+                    `<div class="error">Erro ao carregar: ${error.message}</div>`;
+            }
+        }
+
+        // Carregar status dos feeds
+        async function loadFeedsStatus() {
+            try {
+                const response = await fetch('/api/stats/feeds');
+                const data = await response.json();
+                
+                let html = '';
+                for (const [feed, status] of Object.entries(data)) {
+                    const statusClass = `status-${status.status}`;
+                    const statusText = status.status === 'active' ? 'Ativo' : 
+                                     status.status === 'inactive' ? 'Inativo' : 'Erro';
+                    
+                    html += `
+                        <div class="feed-card">
+                            <div class="feed-name">${feed}</div>
+                            <div class="stat-item">
+                                <span class="stat-label">Status:</span>
+                                <span class="stat-value">
+                                    <span class="status-indicator ${statusClass}"></span>
+                                    ${statusText}
+                                </span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Listener:</span>
+                                <span class="stat-value">${status.listener_running ? '✅' : '❌'}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Scheduler:</span>
+                                <span class="stat-value">${status.scheduler_running ? '✅' : '❌'}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Usuários:</span>
+                                <span class="stat-value">${formatNumber(status.user_count)}</span>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                document.getElementById('feeds-status').innerHTML = html;
+            } catch (error) {
+                document.getElementById('feeds-status').innerHTML = 
+                    `<div class="error">Erro ao carregar: ${error.message}</div>`;
+            }
+        }
+
+        // Carregar logs
+        async function loadLogs() {
+            try {
+                const response = await fetch('/api/logs?lines=50');
+                const data = await response.json();
+                
+                if (data.logs) {
+                    document.getElementById('logs-content').textContent = data.logs.join('');
+                } else {
+                    document.getElementById('logs-content').textContent = 'Nenhum log encontrado';
+                }
+            } catch (error) {
+                document.getElementById('logs-content').textContent = `Erro ao carregar logs: ${error.message}`;
+            }
+        }
+
+        // Atualizar logs
+        function refreshLogs() {
+            loadLogs();
+        }
+
+        // Carregar todos os dados
+        async function loadAllData() {
+            await Promise.all([
+                loadSystemStats(),
+                loadUsersStats(),
+                loadAlertsStats(),
+                loadFeedsStatus(),
+                loadLogs()
+            ]);
+        }
+
+        // Carregar dados iniciais
+        loadAllData();
+
+        // Atualizar a cada 30 segundos
+        setInterval(loadAllData, 30000);
+    </script>
+</body>
+</html>
