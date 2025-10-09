@@ -301,7 +301,7 @@ class BotMonitor:
                     
                     # Alertas hoje
                     today = datetime.now().strftime('%Y-%m-%d')
-                    cursor.execute("SELECT COUNT(*) FROM alertas WHERE DATE(data_envio) = ?", (today,))
+                    cursor.execute("SELECT COUNT(*) FROM alert_history WHERE DATE(created_at) = ?", (today,))
                     alerts_today = cursor.fetchone()[0]
                     all_alerts += alerts_today
                     
@@ -369,8 +369,8 @@ class BotMonitor:
                     # Top ligas
                     cursor.execute("""
                         SELECT league, COUNT(*) as count 
-                        FROM alertas 
-                        WHERE DATE(data_envio) >= DATE('now', '-7 days')
+                        FROM alert_history 
+                        WHERE DATE(created_at) >= DATE('now', '-7 days')
                         GROUP BY league 
                         ORDER BY count DESC 
                         LIMIT 10
@@ -381,8 +381,8 @@ class BotMonitor:
                     # Top bookmakers
                     cursor.execute("""
                         SELECT bookmaker, COUNT(*) as count 
-                        FROM alertas 
-                        WHERE DATE(data_envio) >= DATE('now', '-7 days')
+                        FROM alert_history 
+                        WHERE DATE(created_at) >= DATE('now', '-7 days')
                         GROUP BY bookmaker 
                         ORDER BY count DESC 
                         LIMIT 10
@@ -392,9 +392,9 @@ class BotMonitor:
                     
                     # Análise de horários
                     cursor.execute("""
-                        SELECT strftime('%H', data_envio) as hour, COUNT(*) as count 
-                        FROM alertas 
-                        WHERE DATE(data_envio) >= DATE('now', '-7 days')
+                        SELECT strftime('%H', created_at) as hour, COUNT(*) as count 
+                        FROM alert_history 
+                        WHERE DATE(created_at) >= DATE('now', '-7 days')
                         GROUP BY hour 
                         ORDER BY hour
                     """)
