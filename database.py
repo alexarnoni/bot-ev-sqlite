@@ -5,7 +5,7 @@ import sqlite3
 import json
 import hashlib
 from datetime import datetime, timezone
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager
 from typing import Optional, List, Dict, Set, Any
 from config import feed_path, FEED_ID
 
