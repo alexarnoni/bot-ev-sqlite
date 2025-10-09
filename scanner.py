@@ -75,8 +75,51 @@ async def scan_apostas():
         return f"📊 {total_alertas} alertas enviados"
         
     except Exception as e:
-        logger.error(f"❌ Erro no scan de apostas: {e}")
-        return f"❌ Erro no scan: {str(e)}"
+        logger.error(f"❌ Erro no scan: {e}")
+        return f"❌ Erro: {e}"
+
+async def scan_apostas_usuario(chat_id: str):
+    """
+    Scan individual para um usuário específico
+    Usado pelo comando /scan manual
+    """
+    try:
+        logger.info(f"🔍 Iniciando scan individual para usuário {chat_id}...")
+        
+        # Calcula momento do scan uma vez para consistência
+        momento_scan = datetime.now(timezone.utc)
+        
+        # Verifica status da API
+        if not await get_odds_api_status():
+            logger.warning("⚠️ API offline, pulando scan")
+            return "⚠️ API offline"
+        
+        # Verifica rate limit
+        if not await api_rate_limiter.can_make_request():
+            logger.warning("⚠️ Rate limit atingido, pulando scan")
+            return "⚠️ Rate limit atingido"
+        
+        # Busca dados do usuário específico
+        usuario = await _buscar_usuario_especifico(chat_id)
+        if not usuario:
+            logger.info(f"📭 Usuário {chat_id} não encontrado ou inativo")
+            return "📭 Usuário não encontrado ou inativo"
+        
+        # Busca apostas da API com base nos bookmakers do usuário
+        apostas = await _buscar_apostas_api([usuario])
+        if not apostas:
+            logger.info("📭 Nenhuma aposta encontrada na API")
+            return "📭 Nenhuma aposta encontrada"
+        
+        # Processa apostas para o usuário específico
+        alertas_usuario = await _processar_apostas_usuario(usuario, apostas, momento_scan)
+        
+        logger.info(f"✅ Scan individual concluído para {chat_id}: {len(alertas_usuario)} alertas enviados")
+        return f"📊 {len(alertas_usuario)} alertas enviados"
+        
+    except Exception as e:
+        logger.error(f"❌ Erro no scan individual para {chat_id}: {e}")
+        return f"❌ Erro: {e}"
 
 async def _buscar_usuarios_ativos() -> List[Dict[str, Any]]:
     """
@@ -138,11 +181,78 @@ async def _buscar_usuarios_ativos() -> List[Dict[str, Any]]:
                 }
                 usuarios.append(usuario)
             
-            return usuarios
-            
+        return usuarios
+        
     except Exception as e:
         logger.error(f"Erro ao buscar usuários ativos: {e}")
         return []
+
+async def _buscar_usuario_especifico(chat_id: str) -> Dict[str, Any]:
+    """
+    Busca um usuário específico com suas configurações
+    """
+    try:
+        async with db_pool.get_connection() as conn:
+            cursor = await conn.execute("""
+                SELECT 
+                    u.chat_id,
+                    u.nome,
+                    uf.ev_faixa_min,
+                    uf.ev_faixa_max,
+                    uf.horario_inicio,
+                    uf.horario_fim,
+                    uf.data_inicio,
+                    uf.data_fim,
+                    uf.filtro_dias
+                FROM users u
+                LEFT JOIN user_filters uf ON u.chat_id = uf.chat_id
+                WHERE u.chat_id = ? AND u.is_active = 1
+            """, (chat_id,))
+            
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            
+            # Busca ligas do usuário
+            cursor_ligas = await conn.execute("""
+                SELECT league FROM user_leagues WHERE chat_id = ?
+            """, (chat_id,))
+            ligas = [liga['league'] for liga in await cursor_ligas.fetchall()]
+            
+            # Busca esportes do usuário
+            cursor_esportes = await conn.execute("""
+                SELECT sport FROM user_sports WHERE chat_id = ?
+            """, (chat_id,))
+            esportes = [esporte['sport'] for esporte in await cursor_esportes.fetchall()]
+            
+            # Busca bookmakers do usuário
+            cursor_bookmakers = await conn.execute("""
+                SELECT bookmaker FROM user_bookmakers WHERE chat_id = ?
+            """, (chat_id,))
+            bookmakers = [bm['bookmaker'] for bm in await cursor_bookmakers.fetchall()]
+            
+            usuario = {
+                'chat_id': row['chat_id'],
+                'nome': row['nome'],
+                'filtros': {
+                    'ev_faixa_min': row['ev_faixa_min'],
+                    'ev_faixa_max': row['ev_faixa_max'],
+                    'horario_inicio': row['horario_inicio'],
+                    'horario_fim': row['horario_fim'],
+                    'data_inicio': row['data_inicio'],
+                    'data_fim': row['data_fim'],
+                    'filtro_dias': row['filtro_dias']
+                },
+                'ligas': ligas,
+                'esportes': esportes,
+                'bookmakers': bookmakers
+            }
+            
+            return usuario
+        
+    except Exception as e:
+        logger.error(f"Erro ao buscar usuário específico {chat_id}: {e}")
+        return None
 
 async def _buscar_apostas_api(usuarios_ativos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
@@ -243,33 +353,53 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
         if not eventos_novos:
             return []
         
-        # Calcula stake e envia alertas (MESMA LÓGICA)
-        alertas_para_enviar = []
+        # Calcula stake e separa alertas por prioridade
+        alertas_normais = []
+        alertas_instantaneos = []
+        
         for evento in eventos_novos:
-            stake = definir_stake(evento.get('ev', 0), evento.get('bet365_odds', 0))
+            ev = evento.get('ev', 0)
+            stake = definir_stake(ev, evento.get('bet365_odds', 0))
+            
             if stake > 0:
-                alertas_para_enviar.append((evento, stake))
+                # EV+ 10% = instantâneo
+                if ev >= 0.10:  # 10% em decimal
+                    alertas_instantaneos.append((evento, stake))
+                    logger.info(f"🚨 ALERTA INSTANTÂNEO detectado para {chat_id}: EV {ev:.2%}")
+                else:
+                    alertas_normais.append((evento, stake))
         
-        if not alertas_para_enviar:
-            return []
-        
-        # Envia alertas em batches (MESMA LÓGICA)
+        # Envia alertas instantâneos IMEDIATAMENTE
         alertas_enviados = 0
-        for i in range(0, len(alertas_para_enviar), 5):  # Batch de 5
-            batch = alertas_para_enviar[i:i+5]
+        for evento, stake in alertas_instantaneos:
             try:
-                await enviar_alertas_batch(chat_id, batch)
-                alertas_enviados += len(batch)
+                await enviar_alerta_instantaneo(chat_id, evento, stake)
+                alertas_enviados += 1
                 
                 # Adiciona ao cache e histórico
-                for evento, stake in batch:
-                    cache.add_alert(chat_id, evento)
-                    await _salvar_no_historico(chat_id, evento)
-                    
+                cache.add_alert(chat_id, evento)
+                await _salvar_no_historico(chat_id, evento)
+                
             except Exception as e:
-                logger.error(f"Erro ao enviar batch para {chat_id}: {e}")
+                logger.error(f"Erro ao enviar alerta instantâneo para {chat_id}: {e}")
         
-        return [evento for evento, stake in alertas_para_enviar]
+        # Envia alertas normais em batches
+        if alertas_normais:
+            for i in range(0, len(alertas_normais), 5):  # Batch de 5
+                batch = alertas_normais[i:i+5]
+                try:
+                    await enviar_alertas_batch(chat_id, batch)
+                    alertas_enviados += len(batch)
+                    
+                    # Adiciona ao cache e histórico
+                    for evento, stake in batch:
+                        cache.add_alert(chat_id, evento)
+                        await _salvar_no_historico(chat_id, evento)
+                        
+                except Exception as e:
+                    logger.error(f"Erro ao enviar batch para {chat_id}: {e}")
+        
+        return [evento for evento, stake in alertas_instantaneos + alertas_normais]
         
     except Exception as e:
         logger.error(f"Erro ao processar apostas para usuário {usuario['chat_id']}: {e}")

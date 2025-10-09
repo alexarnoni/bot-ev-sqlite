@@ -201,23 +201,43 @@ class BotScheduler:
         if not eventos_novos:
             return 0
         
-        # Calcula stake e envia alertas
-        alertas_para_enviar = []
+        # Calcula stake e separa alertas por prioridade
+        alertas_normais = []
+        alertas_instantaneos = []
+        
         for evento in eventos_novos:
-            stake = definir_stake(evento.get('ev', 0), evento.get('bet365_odds', 0))
+            ev = evento.get('ev', 0)
+            stake = definir_stake(ev, evento.get('bet365_odds', 0))
+            
             if stake > 0:
-                alertas_para_enviar.append((evento, stake))
+                # EV+ 10% = instantâneo
+                if ev >= 0.10:  # 10% em decimal
+                    alertas_instantaneos.append((evento, stake))
+                    logger_scan.info(f"🚨 ALERTA INSTANTÂNEO detectado para {chat_id}: EV {ev:.2%}")
+                else:
+                    alertas_normais.append((evento, stake))
         
-        if not alertas_para_enviar:
-            return 0
-        
-        # Envia alertas em batches
+        # Envia alertas instantâneos IMEDIATAMENTE
         alertas_enviados = 0
-        for i in range(0, len(alertas_para_enviar), 5):  # Batch de 5
-            batch = alertas_para_enviar[i:i+5]
+        for evento, stake in alertas_instantaneos:
             try:
-                await enviar_alertas_batch(chat_id, batch)
-                alertas_enviados += len(batch)
+                from bot_ev import enviar_alerta_instantaneo
+                await enviar_alerta_instantaneo(chat_id, evento, stake)
+                alertas_enviados += 1
+                
+                # Adiciona ao cache
+                self.cache.add_alert(chat_id, evento)
+                
+            except Exception as e:
+                logger_scan.error(f"Erro ao enviar alerta instantâneo para {chat_id}: {e}")
+        
+        # Envia alertas normais em batches
+        if alertas_normais:
+            for i in range(0, len(alertas_normais), 5):  # Batch de 5
+                batch = alertas_normais[i:i+5]
+                try:
+                    await enviar_alertas_batch(chat_id, batch)
+                    alertas_enviados += len(batch)
                 
                 # Adiciona ao cache e histórico
                 for evento, stake in batch:
