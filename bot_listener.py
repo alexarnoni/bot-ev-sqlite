@@ -369,8 +369,9 @@ async def start_usuario_configurado(update, context, filtros_usuario):
     elif data_inicio and data_fim:
         # Verifica se é estático e se expirou
         try:
+            from datetime import timezone
             data_fim_obj = datetime.strptime(data_fim, "%Y-%m-%d").date()
-            hoje = datetime.now().date()
+            hoje = datetime.now(timezone.utc).date()
             if data_fim_obj < hoje:
                 status_data = "Período expirado ⚠️"
             else:
@@ -439,8 +440,9 @@ async def start_usuario_configurado_callback(query, context, filtros_usuario):
         status_data = f"{filtro_dias} dias (renova automaticamente) 🔄"
     elif data_inicio and data_fim:
         try:
+            from datetime import timezone
             data_fim_obj = datetime.strptime(data_fim, "%Y-%m-%d").date()
-            hoje = datetime.now().date()
+            hoje = datetime.now(timezone.utc).date()
             if data_fim_obj < hoje:
                 status_data = "Período expirado ⚠️"
             else:
@@ -1350,7 +1352,15 @@ async def admin_handler(update, context):
     atualizado_em = status_api.get("atualizado_em")
     if atualizado_em:
         try:
-            atualizado_em_fmt = datetime.fromisoformat(atualizado_em).astimezone().strftime("%d/%m/%Y %H:%M:%S")
+            from datetime import timezone, timedelta
+            dt = datetime.fromisoformat(atualizado_em)
+            # Se não tem timezone, assume UTC
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            # Converte para horário de Brasília (UTC-3)
+            brasilia_tz = timezone(timedelta(hours=-3))
+            dt_brasilia = dt.astimezone(brasilia_tz)
+            atualizado_em_fmt = dt_brasilia.strftime("%d/%m/%Y %H:%M:%S")
         except ValueError:
             atualizado_em_fmt = atualizado_em
     else:
