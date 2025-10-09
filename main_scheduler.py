@@ -3,7 +3,7 @@ Scheduler principal do Bot EV+ com job fixo de 2 minutos
 """
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
