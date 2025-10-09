@@ -18,7 +18,7 @@ from historico import get_history
 from status import get_status
 from database import get_db
 from rate_limiter import get_rate_limiter
-from filtros import evento_valido, aplicar_filtros_dinamicos
+from filtros import evento_valido, aplicar_filtros_dinamicos, validar_filtros_usuario
 from bot_core import definir_stake
 from bot_ev import enviar_alertas_batch
 from utils import logger_geral, logger_scan, update_league_catalog, LIGAS_POR_REGIAO
@@ -185,8 +185,21 @@ class BotScheduler:
         # Filtra eventos válidos
         eventos_validos = []
         for evento in todos_eventos:
-            if evento_valido(evento, filtros) and aplicar_filtros_dinamicos(evento, filtros, janela_tempo):
-                eventos_validos.append(evento)
+            if not evento_valido(evento, filtros):
+                continue
+            
+            # Verifica filtros específicos do usuário (bookmakers, ligas, esportes)
+            ligas_usuario = filtros.get('ligas', [])
+            esportes_usuario = filtros.get('esportes', [])
+            bookmakers_usuario = filtros.get('bookmakers', [])
+            
+            if not validar_filtros_usuario(evento, filtros, ligas_usuario, esportes_usuario, bookmakers_usuario):
+                continue
+            
+            if not aplicar_filtros_dinamicos(evento, filtros, janela_tempo):
+                continue
+                
+            eventos_validos.append(evento)
         
         if not eventos_validos:
             return 0
