@@ -943,6 +943,17 @@
                             <span class="stat-label">Alertas Hoje:</span>
                             <span class="stat-value">${formatNumber(stats.alerts_today)}</span>
                         </div>
+                        <div class="feed-control-buttons">
+                            <button class="feed-btn start-btn" onclick="startFeed('${feed}')" title="Iniciar Feed">
+                                ▶️ Start
+                            </button>
+                            <button class="feed-btn stop-btn" onclick="stopFeed('${feed}')" title="Parar Feed">
+                                ⏹️ Stop
+                            </button>
+                            <button class="feed-btn restart-btn" onclick="restartFeed('${feed}')" title="Reiniciar Feed">
+                                🔄 Restart
+                            </button>
+                        </div>
                     </div>
                 `;
             }
@@ -1116,6 +1127,73 @@
 
         function showRestoreOptions() {
             alert('Funcionalidade de restore será implementada em breve!');
+        }
+
+        // Funções de controle individual de feeds
+        async function startFeed(feedId) {
+            if (!confirm(`Tem certeza que deseja iniciar o feed ${feedId}?`)) return;
+            
+            try {
+                const response = await fetch('/api/actions/start_feed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ feed_id: feedId })
+                });
+                const data = await response.json();
+                
+                if (data.message) {
+                    alert('✅ ' + data.message);
+                    loadAllData(); // Recarrega dados
+                } else {
+                    alert('❌ ' + data.error);
+                }
+            } catch (error) {
+                alert('❌ Erro: ' + error.message);
+            }
+        }
+
+        async function stopFeed(feedId) {
+            if (!confirm(`Tem certeza que deseja parar o feed ${feedId}?`)) return;
+            
+            try {
+                const response = await fetch('/api/actions/stop_feed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ feed_id: feedId })
+                });
+                const data = await response.json();
+                
+                if (data.message) {
+                    alert('✅ ' + data.message);
+                    loadAllData(); // Recarrega dados
+                } else {
+                    alert('❌ ' + data.error);
+                }
+            } catch (error) {
+                alert('❌ Erro: ' + error.message);
+            }
+        }
+
+        async function restartFeed(feedId) {
+            if (!confirm(`Tem certeza que deseja reiniciar o feed ${feedId}?`)) return;
+            
+            try {
+                const response = await fetch('/api/actions/restart_feed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ feed: feedId })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('✅ ' + data.message);
+                    loadAllData(); // Recarrega dados
+                } else {
+                    alert('❌ ' + data.error);
+                }
+            } catch (error) {
+                alert('❌ Erro: ' + error.message);
+            }
         }
 
         // Funções do modal de configurações
