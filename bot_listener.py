@@ -41,7 +41,9 @@ logging.info("🔊 bot_listener.py iniciado.")
 # Carregar variáveis de ambiente
 load_dotenv()
 TELEGRAM_TOKEN = get_telegram_token()
-ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
+# Usar ADMIN_USERS do config.py que já está configurado
+from config import ADMIN_USERS
+ADMIN_CHAT_ID = str(ADMIN_USERS[0]) if ADMIN_USERS else None
 
 db = get_db()
 

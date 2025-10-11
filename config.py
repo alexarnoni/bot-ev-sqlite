@@ -90,7 +90,7 @@ CACHE_CLEANUP_DAYS = 30
 REQUEST_LOG_CLEANUP_HOURS = 2
 
 # Admin users (configurar via env var)
-ADMIN_USERS = [int(x) for x in os.getenv("ADMIN_CHAT_IDS", "").split(",") if x.strip()]
+ADMIN_USERS = [int(x) for x in os.getenv("ADMIN_USERS", "").split(",") if x.strip()]
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
