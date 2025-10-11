@@ -527,10 +527,21 @@ def api_start_feed():
             return jsonify({'error': 'Feed ID é obrigatório'}), 400
         
         import subprocess
-        result = subprocess.run(
-            [f'./start_feed.sh', feed_id],
-            capture_output=True, text=True, timeout=30
-        )
+        import platform
+        
+        # Detecta o sistema operacional e usa o script correto
+        if platform.system() == 'Windows':
+            # Windows - usa PowerShell
+            result = subprocess.run(
+                ['powershell', '-ExecutionPolicy', 'Bypass', '-File', 'start_feed.ps1', feed_id],
+                capture_output=True, text=True, timeout=30
+            )
+        else:
+            # Linux/Unix - usa shell script
+            result = subprocess.run(
+                [f'./start_feed.sh', feed_id],
+                capture_output=True, text=True, timeout=30
+            )
         
         if result.returncode == 0:
             return jsonify({'message': f'Feed {feed_id} iniciado com sucesso'})
@@ -551,10 +562,21 @@ def api_stop_feed():
             return jsonify({'error': 'Feed ID é obrigatório'}), 400
         
         import subprocess
-        result = subprocess.run(
-            [f'./stop_feed.sh', feed_id],
-            capture_output=True, text=True, timeout=30
-        )
+        import platform
+        
+        # Detecta o sistema operacional e usa o script correto
+        if platform.system() == 'Windows':
+            # Windows - usa PowerShell
+            result = subprocess.run(
+                ['powershell', '-ExecutionPolicy', 'Bypass', '-File', 'stop_feed.ps1', feed_id],
+                capture_output=True, text=True, timeout=30
+            )
+        else:
+            # Linux/Unix - usa shell script
+            result = subprocess.run(
+                [f'./stop_feed.sh', feed_id],
+                capture_output=True, text=True, timeout=30
+            )
         
         if result.returncode == 0:
             return jsonify({'message': f'Feed {feed_id} parado com sucesso'})
@@ -579,8 +601,13 @@ def api_restart_feed():
                       capture_output=True, timeout=10)
         
         # Inicia o feed
-        subprocess.run(['./start_all_feeds.sh'], 
-                      capture_output=True, timeout=30)
+        import platform
+        if platform.system() == 'Windows':
+            subprocess.run(['powershell', '-ExecutionPolicy', 'Bypass', '-File', 'start_all_feeds.sh'], 
+                          capture_output=True, timeout=30)
+        else:
+            subprocess.run(['./start_all_feeds.sh'], 
+                          capture_output=True, timeout=30)
         
         return jsonify({'success': True, 'message': f'Feed {feed} reiniciado'})
     except Exception as e:
@@ -591,18 +618,34 @@ def api_restart_all():
     """API para reiniciar todos os feeds"""
     try:
         import subprocess
-        result = subprocess.run(
-            ['./stop_all_feeds.sh'],
-            capture_output=True, text=True, timeout=60
-        )
+        import platform
         
-        import time
-        time.sleep(3)
-        
-        result2 = subprocess.run(
-            ['./start_all_feeds.sh'],
-            capture_output=True, text=True, timeout=60
-        )
+        if platform.system() == 'Windows':
+            result = subprocess.run(
+                ['powershell', '-ExecutionPolicy', 'Bypass', '-File', 'stop_all_feeds.sh'],
+                capture_output=True, text=True, timeout=60
+            )
+            
+            import time
+            time.sleep(3)
+            
+            result2 = subprocess.run(
+                ['powershell', '-ExecutionPolicy', 'Bypass', '-File', 'start_all_feeds.sh'],
+                capture_output=True, text=True, timeout=60
+            )
+        else:
+            result = subprocess.run(
+                ['./stop_all_feeds.sh'],
+                capture_output=True, text=True, timeout=60
+            )
+            
+            import time
+            time.sleep(3)
+            
+            result2 = subprocess.run(
+                ['./start_all_feeds.sh'],
+                capture_output=True, text=True, timeout=60
+            )
         
         if result2.returncode == 0:
             return jsonify({'message': 'Todos os feeds reiniciados com sucesso'})
