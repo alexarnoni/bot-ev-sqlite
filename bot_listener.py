@@ -1342,16 +1342,16 @@ async def admin_handler(update, context):
     
     # Estatísticas do sistema
     stats_api = api_rate_limiter.get_stats()
-    status_api = get_odds_api_status()
+    status_api = db.get_api_status()
     usuarios_ativos = len(filtros_por_chat.keys())
     
     # Contagem de alertas hoje
     total_alertas_hoje = _count_alerts_on_date(date.today())
     
-    status_icone = "✅" if status_api.get("ok") else "❌"
-    status_msg = status_api.get("mensagem", "Desconhecido")
-    status_detalhes = status_api.get("detalhes")
-    atualizado_em = status_api.get("atualizado_em")
+    status_icone = "✅" if status_api.get("odds_api_ok") else "❌"
+    status_msg = status_api.get("odds_api_message", "Desconhecido")
+    status_detalhes = status_api.get("odds_api_details")
+    atualizado_em = status_api.get("updated_at")
     if atualizado_em:
         try:
             from datetime import timezone, timedelta
