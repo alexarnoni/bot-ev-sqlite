@@ -367,12 +367,13 @@ async def start_usuario_configurado(update, context, filtros_usuario):
     
     # Determina status dos filtros
     if filtro_dias:
-        status_data = f"Próximos {filtro_dias} dias 🔄"
+        status_data = f"{filtro_dias} dias (renova automaticamente) 🔄"
     elif data_inicio and data_fim:
         # Verifica se é estático e se expirou
         try:
+            from datetime import timezone
             data_fim_obj = datetime.strptime(data_fim, "%Y-%m-%d").date()
-            hoje = datetime.now().date()
+            hoje = datetime.now(timezone.utc).date()
             if data_fim_obj < hoje:
                 status_data = "Período expirado ⚠️"
             else:
@@ -438,11 +439,12 @@ async def start_usuario_configurado_callback(query, context, filtros_usuario):
     horario_fim = filtros_usuario.get("horario_fim")
     
     if filtro_dias:
-        status_data = f"Próximos {filtro_dias} dias 🔄"
+        status_data = f"{filtro_dias} dias (renova automaticamente) 🔄"
     elif data_inicio and data_fim:
         try:
+            from datetime import timezone
             data_fim_obj = datetime.strptime(data_fim, "%Y-%m-%d").date()
-            hoje = datetime.now().date()
+            hoje = datetime.now(timezone.utc).date()
             if data_fim_obj < hoje:
                 status_data = "Período expirado ⚠️"
             else:
@@ -669,12 +671,12 @@ async def setup_passo4_callback(update, context):
     msg = (
         "📅 <b>Passo 4/5: Período de Alertas</b>\n\n"
         "Por quantos dias você quer receber alertas?\n\n"
-        "📅 <b>1 Dia:</b> Apenas apostas de hoje\n"
-        "📅 <b>2 Dias:</b> Hoje e amanhã\n"
-        "📅 <b>3 Dias:</b> Próximos 3 dias\n"
-        "📅 <b>7 Dias:</b> Próxima semana\n"
+        "📅 <b>1 Dia:</b> Dentro de 24 horas\n"
+        "📅 <b>2 Dias:</b> Dentro de 48 horas\n"
+        "📅 <b>3 Dias:</b> Dentro de 72 horas\n"
+        "📅 <b>7 Dias:</b> Dentro de 168 horas\n"
         "♾️ <b>Ilimitado:</b> Sempre ativo\n\n"
-        "💡 <b>Dica:</b> Recomendamos 3-7 dias para começar"
+        "💡 <b>Dica:</b> O filtro se renova automaticamente a cada dia"
     )
     
     await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
@@ -1004,7 +1006,7 @@ async def ver_filtros_inline_detalhado(update, context, chat_id):
     
     # Data
     if filtro_dias:
-        msg += f"\n📅 <b>Datas:</b> Próximos {filtro_dias} dias (dinâmico)\n"
+        msg += f"\n📅 <b>Datas:</b> {filtro_dias} dias (renova automaticamente) 🔄\n"
     elif data_inicio and data_fim:
         msg += f"\n📅 <b>Datas:</b> {data_inicio} até {data_fim} (estático ⚠️)\n"
     else:
@@ -1352,7 +1354,15 @@ async def admin_handler(update, context):
     atualizado_em = status_api.get("atualizado_em")
     if atualizado_em:
         try:
-            atualizado_em_fmt = datetime.fromisoformat(atualizado_em).astimezone().strftime("%d/%m/%Y %H:%M:%S")
+            from datetime import timezone, timedelta
+            dt = datetime.fromisoformat(atualizado_em)
+            # Se não tem timezone, assume UTC
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            # Converte para horário de Brasília (UTC-3)
+            brasilia_tz = timezone(timedelta(hours=-3))
+            dt_brasilia = dt.astimezone(brasilia_tz)
+            atualizado_em_fmt = dt_brasilia.strftime("%d/%m/%Y %H:%M:%S")
         except ValueError:
             atualizado_em_fmt = atualizado_em
     else:
@@ -1711,10 +1721,11 @@ async def callback_bookmaker(update, context):
 async def filtros_data_handler(update, context):
     """Menu para configurar filtros de data"""
     keyboard = [
-        [InlineKeyboardButton("📅 Próximos 3 dias", callback_data="data_dinamica|3")],
-        [InlineKeyboardButton("📅 Próximos 7 dias", callback_data="data_dinamica|7")],
-        [InlineKeyboardButton("📅 Próximos 15 dias", callback_data="data_dinamica|15")],
-        [InlineKeyboardButton("📅 Próximos 30 dias", callback_data="data_dinamica|30")],
+        [InlineKeyboardButton("📅 1 Dia", callback_data="data_dinamica|1")],
+        [InlineKeyboardButton("📅 2 Dias", callback_data="data_dinamica|2")],
+        [InlineKeyboardButton("📅 3 Dias", callback_data="data_dinamica|3")],
+        [InlineKeyboardButton("📅 7 Dias", callback_data="data_dinamica|7")],
+        [InlineKeyboardButton("♾️ Ilimitado", callback_data="data_dinamica|0")],
         [InlineKeyboardButton("🗓️ Período específico", callback_data="data_estatica")],
         [InlineKeyboardButton("🧹 Remover filtro de data", callback_data="data_remover")],
         [InlineKeyboardButton("🔙 Voltar", callback_data="reconfigurar")],
@@ -1723,7 +1734,12 @@ async def filtros_data_handler(update, context):
     msg = (
         "📅 <b>Filtro de Data dos Jogos</b>\n\n"
         "🔄 <b>Dinâmico (recomendado):</b>\n"
-        "Sempre os próximos X dias a partir de hoje\n\n"
+        "Sempre os próximos X dias a partir de hoje (renova automaticamente)\n\n"
+        "📅 <b>1 Dia:</b> Dentro de 24 horas\n"
+        "📅 <b>2 Dias:</b> Dentro de 48 horas\n"
+        "📅 <b>3 Dias:</b> Dentro de 72 horas\n"
+        "📅 <b>7 Dias:</b> Dentro de 168 horas\n"
+        "♾️ <b>Ilimitado:</b> Sempre ativo\n\n"
         "⚠️ <b>Estático:</b>\n"
         "Período fixo que expira\n\n"
         "Escolha sua preferência:"
@@ -1754,11 +1770,12 @@ async def callback_data_dinamica(update, context):
     
     salvar_filtros()
     
-    hoje = datetime.now().date()
+    from datetime import timezone
+    hoje = datetime.now(timezone.utc).date()
     data_fim = hoje + timedelta(days=dias)
     await query.edit_message_text(
         f"✅ <b>Filtro dinâmico configurado!</b>\n\n"
-        f"📅 Sempre os próximos {dias} dias\n"
+        f"📅 {dias} dias (renova automaticamente)\n"
         f"🔄 Hoje até {data_fim.strftime('%d/%m/%Y')}\n\n"
         f"💡 <i>Se atualiza automaticamente todos os dias!</i>",
         parse_mode="HTML"

@@ -106,26 +106,27 @@ class AlertSender:
             link_evento = aposta.get('bet_url') or aposta.get('event_url') 
             
             # Formata o link como hiperlink HTML se disponível
-            link_html = f'<a href="{link_evento}">Abrir na {bookmaker_fmt}</a>' if link_evento else f'Abrir na {bookmaker_fmt}'
+            if link_evento:
+                link_formatado = f'<a href="{link_evento}">🔗 Abrir na {bookmaker_fmt}</a>'
+            else:
+                link_formatado = f"🔗 Abrir na {bookmaker_fmt} (link não disponível)"
             
-            # MENSAGEM INSTANTÂNEA COM DESTAQUE ESPECIAL
-            mensagem = f"""🚨 <b>ALERTA INSTANTÂNEO - EV ALTO!</b> 🚨
-
-{emoji_esporte} <b>{home}</b> vs <b>{away}</b>
-{bandeira_pais} {league}
-📌 Mercado: {mercado_fmt}
-🔢 Odd {bookmaker_fmt}: {odds_fmt}
-📈 <b>Valor Esperado (EV): {ev_pct}</b> ⚡
-🎯 Stake: {stake_fmt}
-🗓️ Data do Jogo: {data_completa}
-⏳ Faltam: {tempo_restante}
-🔗 {link_html}"""
+            # MENSAGEM PADRONIZADA
+            mensagem = f"""{emoji_esporte} <b>{home} vs {away}</b>
+{bandeira_pais} <b>{league}</b>
+<b>📌 Mercado:</b> {mercado_fmt}
+<b>🔢 Odd {bookmaker_fmt}:</b> {odds_fmt}
+<b>📈 Valor Esperado (EV):</b> {ev_pct}
+<b>🎯 Stake:</b> {stake_fmt}
+<b>🗓️ Data do Jogo:</b> {data_completa}
+<b>⏳ Faltam:</b> {tempo_restante}
+{link_formatado}"""
             
-            return mensagem
+            return mensagem.strip()
             
         except Exception as e:
             logger.error(f"Erro ao formatar alerta instantâneo: {e}")
-            return f"🚨 ALERTA INSTANTÂNEO - EV Alto detectado! Erro na formatação: {e}"
+            return f"🚨 Erro na formatação do alerta: {e}"
 
     async def _formatar_alerta(self, aposta: Dict[str, Any]) -> str:
         """
@@ -201,13 +202,20 @@ class AlertSender:
             if not commence_time:
                 return "N/A"
             
+            from datetime import timezone
+            
             # Parse da data/hora
             if 'T' in commence_time:
                 jogo_time = datetime.fromisoformat(commence_time.replace('Z', '+00:00'))
             else:
                 jogo_time = datetime.strptime(commence_time, "%Y-%m-%d %H:%M:%S")
             
-            agora = datetime.now(jogo_time.tzinfo) if jogo_time.tzinfo else datetime.now()
+            # Se não tem timezone, assume UTC
+            if jogo_time.tzinfo is None:
+                jogo_time = jogo_time.replace(tzinfo=timezone.utc)
+            
+            # Usa UTC para comparação consistente
+            agora = datetime.now(timezone.utc)
             diferenca = jogo_time - agora
             
             if diferenca.total_seconds() < 0:
@@ -233,18 +241,86 @@ class AlertSender:
     def _get_emoji_esporte(self, sport: str) -> str:
         """
         Retorna emoji baseado no esporte
+        Focado nos esportes disponíveis na API Odds
         """
         emojis = {
+            # Esportes principais da API Odds
+            'football': '⚽',
             'soccer': '⚽',
             'basketball': '🏀',
             'tennis': '🎾',
+            'baseball': '⚾',
+            'ice hockey': '🏒',
+            'icehockey': '🏒',
+            
+            # Esportes adicionais que podem aparecer
             'volleyball': '🏐',
             'handball': '🤾',
             'americanfootball': '🏈',
-            'baseball': '⚾',
-            'icehockey': '🏒',
+            'american football': '🏈',
             'cricket': '🏏',
-            'rugby': '🏉'
+            'rugby': '🏉',
+            'rugby league': '🏉',
+            'rugby union': '🏉',
+            
+            # Esportes de combate
+            'boxing': '🥊',
+            'mma': '🥊',
+            'ufc': '🥊',
+            'kickboxing': '🥊',
+            'muay thai': '🥊',
+            'karate': '🥊',
+            'taekwondo': '🥊',
+            
+            # Esportes de raquete
+            'table tennis': '🏓',
+            'badminton': '🏸',
+            'squash': '🏸',
+            'racquetball': '🏸',
+            
+            # Esports
+            'esports': '🎮',
+            'csgo': '🎮',
+            'counter-strike': '🎮',
+            'dota': '🎮',
+            'lol': '🎮',
+            'league of legends': '🎮',
+            'valorant': '🎮',
+            'overwatch': '🎮',
+            'rocket league': '🎮',
+            
+            # Esportes automobilísticos
+            'formula 1': '🏎️',
+            'f1': '🏎️',
+            'motogp': '🏍️',
+            'nascar': '🏎️',
+            'indycar': '🏎️',
+            'rally': '🏎️',
+            'wrc': '🏎️',
+            
+            # Outros esportes
+            'golf': '⛳',
+            'snooker': '🎱',
+            'pool': '🎱',
+            'billiards': '🎱',
+            'darts': '🎯',
+            'archery': '🏹',
+            'swimming': '🏊',
+            'athletics': '🏃',
+            'cycling': '🚴',
+            'equestrian': '🏇',
+            'gymnastics': '🤸',
+            'water polo': '🤽',
+            'wrestling': '🤼',
+            'fencing': '🤺',
+            'weightlifting': '🏋️',
+            'juggling': '🤹',
+            'surfing': '🏄',
+            'skateboarding': '🛹',
+            'snowboarding': '🏂',
+            'skiing': '⛷️',
+            'ice skating': '⛸️',
+            'figure skating': '⛸️'
         }
         return emojis.get(sport.lower(), '🏆')
 
@@ -476,7 +552,7 @@ async def enviar_alerta_instantaneo(chat_id, evento: Dict[str, Any], stake: floa
             disable_web_page_preview=True
         )
         
-        logger.info(f"🚨 ALERTA INSTANTÂNEO enviado para {chat_id}: EV {evento.get('ev', 0):.2%}")
+        logger.info(f"🚨 Alerta de alta prioridade enviado para {chat_id}: EV {evento.get('ev', 0):.2%}")
         
     except Exception as e:
         logger.error(f"❌ Erro ao enviar alerta instantâneo para {chat_id}: {e}")

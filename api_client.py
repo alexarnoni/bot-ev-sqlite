@@ -84,6 +84,7 @@ class OddsAPI:
                 "market_name": market_name,
                 "market_type": market_type,
                 "bet_side": bet_side_display,
+                "betSide": bet_side,  # Preserva o bet_side original da API
                 "bet365_odds": odd_bet,
                 "odds_home": self._parse_float(odds.get('home', 0.0)) or 0.0,
                 "odds_away": self._parse_float(odds.get('away', 0.0)) or 0.0,
