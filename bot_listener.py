@@ -1777,6 +1777,17 @@ async def callback_data_dinamica(update, context):
     
     salvar_filtros()
     
+    # Se usuário já configurado, volta para o menu
+    if usuario_configurado(int(chat_id)):
+        from datetime import timezone
+        hoje = datetime.now(timezone.utc).date()
+        data_fim = hoje + timedelta(days=dias)
+        msg = f"✅ Filtro de data configurado: {dias} dias\n🔄 Hoje até {data_fim.strftime('%d/%m/%Y')}\n\nVoltando ao menu principal..."
+        await query.edit_message_text(msg, parse_mode="HTML")
+        filtros_usuario = filtros_por_chat.get(chat_id, {})
+        await start_usuario_configurado_callback(query, context, filtros_usuario)
+        return
+    
     from datetime import timezone
     hoje = datetime.now(timezone.utc).date()
     data_fim = hoje + timedelta(days=dias)
@@ -1944,6 +1955,14 @@ async def callback_horario_preset(update, context):
         ("08:00", "18:00"): "Comercial",
         ("19:00", "23:00"): "Futebol BR"
     }.get((inicio, fim), "Personalizado")
+    
+    # Se usuário já configurado, volta para o menu
+    if usuario_configurado(int(chat_id)):
+        msg = f"✅ Filtro de horário configurado!\n🕐 Período: {nome_periodo}\n⏰ Horário: {inicio} às {fim}\n\nVoltando ao menu principal..."
+        await query.edit_message_text(msg, parse_mode="HTML")
+        filtros_usuario = filtros_por_chat.get(chat_id, {})
+        await start_usuario_configurado_callback(query, context, filtros_usuario)
+        return
     
     await query.edit_message_text(
         f"✅ <b>Filtro de horário configurado!</b>\n\n"
@@ -2194,23 +2213,63 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         filtros_usuario["ligas"] = ligas_brasil_atuais
         filtros_usuario["esportes"] = None
         msg = "✅ Filtro ajustado para: 🇧🇷 Brasil (ligas dinâmicas da API)."
+        
+        # Se usuário já configurado, volta para o menu
+        if usuario_configurado(int(chat_id)):
+            salvar_filtros()
+            await query.edit_message_text(
+                f"{msg}\n\nVoltando ao menu principal...",
+                parse_mode="HTML"
+            )
+            await start_usuario_configurado_callback(query, context, filtros_usuario)
+            return
 
     elif data == "europa":
         ligas_europa_atuais = catalogo.get("Europa", {}).get("Football", [])
         filtros_usuario["ligas"] = ligas_europa_atuais
         filtros_usuario["esportes"] = None
         msg = "✅ Filtro ajustado para: 🇪🇺 Europa (ligas dinâmicas da API)."
+        
+        # Se usuário já configurado, volta para o menu
+        if usuario_configurado(int(chat_id)):
+            salvar_filtros()
+            await query.edit_message_text(
+                f"{msg}\n\nVoltando ao menu principal...",
+                parse_mode="HTML"
+            )
+            await start_usuario_configurado_callback(query, context, filtros_usuario)
+            return
 
     elif data == "americasul":
         ligas_america_sul_atuais = catalogo.get("América do Sul", {}).get("Football", [])
         filtros_usuario["ligas"] = ligas_america_sul_atuais
         filtros_usuario["esportes"] = None
         msg = "✅ Filtro ajustado para: 🌎 América do Sul (ligas dinâmicas da API)."
+        
+        # Se usuário já configurado, volta para o menu
+        if usuario_configurado(int(chat_id)):
+            salvar_filtros()
+            await query.edit_message_text(
+                f"{msg}\n\nVoltando ao menu principal...",
+                parse_mode="HTML"
+            )
+            await start_usuario_configurado_callback(query, context, filtros_usuario)
+            return
 
     elif data == "todos":
         filtros_usuario["ligas"] = None
         filtros_usuario["esportes"] = None
         msg = "✅ Filtro removido! Você receberá alertas de todas as ligas."
+        
+        # Se usuário já configurado, volta para o menu
+        if usuario_configurado(int(chat_id)):
+            salvar_filtros()
+            await query.edit_message_text(
+                f"{msg}\n\nVoltando ao menu principal...",
+                parse_mode="HTML"
+            )
+            await start_usuario_configurado_callback(query, context, filtros_usuario)
+            return
 
     elif data == "setup_passo1":
         await setup_passo1_callback(update, context)
@@ -2528,6 +2587,16 @@ async def esporte_callback_handler(update, context):
         msg = f"✅ Esporte configurado: {esportes[0]}"
     else:
         msg = "✅ Todos os esportes habilitados"
+    
+    # Se usuário já configurado, volta para o menu
+    if usuario_configurado(int(chat_id)):
+        await query.edit_message_text(
+            f"{msg}\n\nVoltando ao menu principal...",
+            parse_mode="HTML"
+        )
+        filtros_usuario = filtros_por_chat.get(chat_id, {})
+        await start_usuario_configurado_callback(query, context, filtros_usuario)
+        return
     
     await query.edit_message_text(msg)
 
