@@ -484,7 +484,7 @@ async def start_usuario_configurado_callback(query, context, filtros_usuario):
         f"📅 <b>Datas:</b> {status_data}\n"
         f"🕐 <b>Horários:</b> {status_horario}\n\n"
         "📡 <i>Monitoramento automático ativo!</i>\n"
-        "🔔 <i>Alertas enviados a cada 3 minutos</i>"
+        "🔔 <i>Alertas enviados a cada 2 minutos</i>"
     )
     
     await query.edit_message_text(msg, reply_markup=reply_markup, parse_mode="HTML")
@@ -1706,16 +1706,23 @@ async def callback_bookmaker(update, context):
         # Verificar se está em modo setup
         if context.user_data.get("setup_mode"):
             context.user_data.pop("setup_mode", None)
-        await query.edit_message_text(
+            await query.edit_message_text(
                 f"✅ <b>Casas selecionadas:</b> {', '.join(selecionados)}\n\n"
                 "Continuando setup...",
                 parse_mode="HTML"
-        )
-        # Vai para próximo passo do setup
-        await setup_passo2_callback(update, context)
-    else:
-        # Modo normal
-        await query.edit_message_text(f"✅ Casas de aposta salvas: {', '.join(selecionados)}")
+            )
+            # Vai para próximo passo do setup
+            await setup_passo2_callback(update, context)
+        else:
+            # Modo normal - usuário já configurado, volta para o menu
+            await query.edit_message_text(
+                f"✅ <b>Casas de aposta atualizadas:</b> {', '.join(selecionados)}\n\n"
+                "Voltando ao menu principal...",
+                parse_mode="HTML"
+            )
+            # Volta para o menu principal do usuário configurado
+            filtros_usuario = filtros_por_chat.get(chat_id, {})
+            await start_usuario_configurado_callback(query, context, filtros_usuario)
 
 # ===== FILTROS DE DATA =====
 async def filtros_data_handler(update, context):
