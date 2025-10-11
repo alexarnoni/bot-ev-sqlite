@@ -19,8 +19,15 @@ class AlertHistory:
             # Converte data do jogo se necessário
             if data_jogo and 'T' in data_jogo:
                 try:
+                    from datetime import timezone, timedelta
                     dt = datetime.fromisoformat(data_jogo.replace('Z', '+00:00'))
-                    data_jogo = dt.strftime("%d/%m/%Y %H:%M")
+                    # Se não tem timezone, assume UTC
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    # Converte para horário de Brasília (UTC-3)
+                    brasilia_tz = timezone(timedelta(hours=-3))
+                    dt_brasilia = dt.astimezone(brasilia_tz)
+                    data_jogo = dt_brasilia.strftime("%d/%m/%Y %H:%M")
                 except:
                     data_jogo = data_jogo
             

@@ -87,10 +87,10 @@ def formatar_tempo_segundos(segundos: int) -> str:
 
 def formatar_data_brasileira(data_str: str) -> str:
     """
-    Formata data para formato brasileiro
+    Formata data para formato brasileiro (horário de Brasília)
     """
     try:
-        from datetime import datetime
+        from datetime import datetime, timezone, timedelta
         
         # Parse da data
         if 'T' in data_str:
@@ -98,8 +98,16 @@ def formatar_data_brasileira(data_str: str) -> str:
         else:
             data = datetime.strptime(data_str, "%Y-%m-%d %H:%M:%S")
         
+        # Se não tem timezone, assume UTC
+        if data.tzinfo is None:
+            data = data.replace(tzinfo=timezone.utc)
+        
+        # Converte para horário de Brasília (UTC-3)
+        brasilia_tz = timezone(timedelta(hours=-3))
+        data_brasilia = data.astimezone(brasilia_tz)
+        
         # Formata para brasileiro
-        return data.strftime("%d/%m/%Y %H:%M")
+        return data_brasilia.strftime("%d/%m/%Y %H:%M")
         
     except Exception:
         return data_str
@@ -287,19 +295,25 @@ def tipo_total_por_esporte(esporte):
     
     # Esportes que usam GOLS
     esportes_gols = [
-        "soccer", "football", "handball", "futsal", "futebol"
+        "soccer", "football", "futebol", "handball", "handebol", "futsal"
     ]
     
     # Esportes que usam PONTOS
     esportes_pontos = [
-        "basketball", "volleyball", "american football", "americanfootball", 
-        "rugby", "rugby league", "rugby union", "australian football", "afl",
-        "golf", "darts", "snooker", "pool", "billiards"
+        "basketball", "basquete", "volleyball", "vôlei", "volley",
+        "american football", "americanfootball", "futebol americano",
+        "rugby", "rugby league", "rugby union", 
+        "australian football", "afl",
+        "golf", "darts", "dardos", "snooker", 
+        "pool", "sinuca", "billiards", "bilhar",
+        "hockey", "ice hockey", "hóquei", "icehockey",
+        "beisebol"  # Baseball em português usa pontos para alguns mercados
     ]
     
     # Esportes que usam GAMES/SETS
     esportes_games = [
-        "tennis", "table tennis", "badminton", "squash", "racquetball"
+        "tennis", "tenis", "table tennis", "tenis de mesa",
+        "badminton", "squash", "racquetball"
     ]
     
     # Esportes que usam CORRIDAS
@@ -309,7 +323,8 @@ def tipo_total_por_esporte(esporte):
     
     # Esportes que usam ROUNDS
     esportes_rounds = [
-        "boxing", "mma", "ufc", "kickboxing", "muay thai", "karate", "taekwondo"
+        "boxing", "boxe", "mma", "ufc", "kickboxing", "muay thai", 
+        "karate", "karatê", "taekwondo"
     ]
     
     # Esportes que usam MAPAS
@@ -321,6 +336,11 @@ def tipo_total_por_esporte(esporte):
     # Esportes que usam TEMPO
     esportes_tempo = [
         "formula 1", "f1", "motogp", "nascar", "indycar", "rally", "rallycross"
+    ]
+    
+    # Esportes que usam SETS (diferente de games)
+    esportes_sets = [
+        "volleyball sets", "tennis sets"  # Para mercados específicos de sets
     ]
     
     if esporte_lower in esportes_gols:
@@ -337,6 +357,8 @@ def tipo_total_por_esporte(esporte):
         return "Mapas"
     elif esporte_lower in esportes_tempo:
         return "Tempo"
+    elif esporte_lower in esportes_sets:
+        return "Sets"
     else:
         return "Pontos"  # Fallback genérico
 
@@ -390,6 +412,72 @@ def extrair_linha_mercado(evento):
             return "/".join([aplicar_sinal(x) for x in total])
         return aplicar_sinal(total)
     return ""
+
+def get_sport_betside_logic(sport: str, market_type: str, bet_side: str) -> str:
+    """
+    Define a lógica de betSide para cada esporte e tipo de mercado
+    
+    Args:
+        sport: Esporte (ex: 'americanfootball', 'baseball', 'tennis')
+        market_type: Tipo de mercado (ex: 'player props', 'ml', 'totals')
+        bet_side: Lado da aposta (ex: 'home', 'away', 'over', 'under')
+    
+    Returns:
+        str: Texto para exibir (ex: 'Mais de', 'Menos de', 'Home', 'Away')
+    """
+    
+    sport_lower = sport.lower()
+    market_lower = market_type.lower()
+    bet_side_lower = bet_side.lower()
+    
+    # ESPORTES COM PLAYER PROPS (home=Over, away=Under)
+    player_props_sports = [
+        'americanfootball', 'american football', 'futebol americano',
+        'baseball', 'beisebol',
+        'basketball', 'basquete',
+        'hockey', 'ice hockey', 'hóquei',
+        'soccer', 'football', 'futebol'
+    ]
+    
+    # Verifica se é player prop
+    is_player_prop = (
+        'player' in market_lower or 
+        'player props' in market_lower or
+        'player prop' in market_lower
+    )
+    
+    # Verifica se o esporte usa lógica home=Over/away=Under para player props
+    uses_home_away_over_under = (
+        sport_lower in player_props_sports and 
+        is_player_prop
+    )
+    
+    if uses_home_away_over_under:
+        # Lógica: home=Over, away=Under
+        if bet_side_lower == 'home':
+            return 'Mais de'
+        elif bet_side_lower == 'away':
+            return 'Menos de'
+        elif bet_side_lower == 'over':
+            return 'Mais de'
+        elif bet_side_lower == 'under':
+            return 'Menos de'
+    
+    # ESPORTES COM LÓGICA OVER/UNDER EXPLÍCITA
+    elif bet_side_lower in ['over', 'under']:
+        if bet_side_lower == 'over':
+            return 'Mais de'
+        elif bet_side_lower == 'under':
+            return 'Menos de'
+    
+    # ESPORTES COM LÓGICA HOME/AWAY (nomes dos times)
+    elif bet_side_lower in ['home', 'away']:
+        # Para mercados normais, home/away = nomes dos times
+        return bet_side.title()
+    
+    # FALLBACK
+    else:
+        return bet_side.title()
 
 def _traduzir_tipo_prop(tipo_prop: str, esporte: str) -> str:
     """
@@ -464,7 +552,8 @@ def _traduzir_tipo_prop(tipo_prop: str, esporte: str) -> str:
             'strikeouts': 'Strikeouts',
             'walks': 'Bases por Bola',
             'stolen bases': 'Bases Roubadas',
-            'innings pitched': 'Entradas Lançadas'
+            'innings pitched': 'Entradas Lançadas',
+            'total bases': 'Total Bases'
         }
         return props_baseball.get(tipo_lower, tipo_prop.title())
     
@@ -659,13 +748,8 @@ def montar_nome_mercado(evento):
                     except Exception:
                         valor_hdp = hdp
                     
-                    # Determina Mais/Menos baseado no lado
-                    if lado == "home":
-                        lado_pt = "Mais de"
-                    elif lado == "away":
-                        lado_pt = "Menos de"
-                    else:
-                        lado_pt = TRADUCAO_LADOS.get(lado, "")
+                    # Usa a lógica personalizada por esporte
+                    lado_pt = get_sport_betside_logic(esporte, nome_raw, lado)
                     return f"{jogador} - {lado_pt} {valor_hdp} {tipo_prop}"
         except Exception:
             pass  # fallback para o código existente abaixo

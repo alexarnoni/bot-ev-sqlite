@@ -8,7 +8,7 @@ from typing import List, Dict, Any
 
 from api_client import OddsAPI
 from database import SQLiteConnectionPool, SQLiteConnectionConfig
-from filtros import evento_valido, aplicar_filtros_dinamicos
+from filtros import evento_valido, aplicar_filtros_dinamicos, validar_filtros_usuario
 from rate_limiter import api_rate_limiter
 from status import get_odds_api_status
 from utils import carregar_catalogo_ligas
@@ -328,8 +328,16 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
             except Exception:
                 pass
             
-            # Aplica filtros do usuário (MESMA LÓGICA)
+            # Aplica filtros do usuário incluindo bookmakers (MESMA LÓGICA)
             if not evento_valido(aposta, filtros):
+                continue
+            
+            # Verifica filtros específicos do usuário (bookmakers, ligas, esportes)
+            ligas_usuario = usuario.get('ligas', [])
+            esportes_usuario = usuario.get('esportes', [])
+            bookmakers_usuario = usuario.get('bookmakers', [])
+            
+            if not validar_filtros_usuario(aposta, filtros, ligas_usuario, esportes_usuario, bookmakers_usuario):
                 continue
             
             # Aplica filtros dinâmicos (MESMA LÓGICA)
@@ -363,7 +371,7 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
                 # EV+ 10% = instantâneo
                 if ev >= 0.10:  # 10% em decimal
                     alertas_instantaneos.append((evento, stake))
-                    logger.info(f"🚨 ALERTA INSTANTÂNEO detectado para {chat_id}: EV {ev:.2%}")
+                    logger.info(f"🚨 Alerta de alta prioridade detectado para {chat_id}: EV {ev:.2%}")
                 else:
                     alertas_normais.append((evento, stake))
         
