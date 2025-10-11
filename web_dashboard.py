@@ -215,15 +215,35 @@ class BotMonitor:
         
         for feed in feeds:
             try:
-                # Verifica se há processos tmux rodando
-                import subprocess
-                result = subprocess.run(
-                    ['tmux', 'list-sessions', '-F', '#{session_name}'],
-                    capture_output=True, text=True, timeout=5
-                )
+                # Verifica processos Python diretamente
+                import psutil
+                listener_running = False
+                scheduler_running = False
                 
-                listener_running = f"listener_{feed}" in result.stdout
-                scheduler_running = f"main_{feed}" in result.stdout
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                    try:
+                        cmdline = ' '.join(proc.info['cmdline']) if proc.info['cmdline'] else ''
+                        
+                        # Verifica listener
+                        if 'bot_listener.py' in cmdline:
+                            if feed == 'default':
+                                if 'FEED_ID=' not in cmdline or f'FEED_ID={feed}' in cmdline:
+                                    listener_running = True
+                            else:
+                                if f'FEED_ID={feed}' in cmdline:
+                                    listener_running = True
+                        
+                        # Verifica scheduler (comando real: python3 -c import asyncio; from main_scheduler import main; asyncio.run(main()))
+                        if 'main_scheduler' in cmdline:
+                            if feed == 'default':
+                                if 'FEED_ID=' not in cmdline or f'FEED_ID={feed}' in cmdline:
+                                    scheduler_running = True
+                            else:
+                                if f'FEED_ID={feed}' in cmdline:
+                                    scheduler_running = True
+                                    
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        continue
                 
                 # Verifica se há banco de dados
                 feed_db_path = os.path.join(os.getcwd(), "data", feed, "bot.db")
