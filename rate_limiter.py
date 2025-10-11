@@ -102,6 +102,35 @@ class APIRateLimiter:
             logger.error(f"Erro ao calcular requests restantes: {e}")
             return 0
 
+    def get_stats(self) -> dict:
+        """
+        Retorna estatísticas do rate limiter de forma síncrona
+        """
+        try:
+            # Usar o método síncrono do database para evitar problemas de async
+            from database import get_db
+            db = get_db()
+            
+            requests_used = db.get_request_count_last_hour()
+            requests_remaining = max(0, self.max_requests - requests_used)
+            usage_percent = (requests_used / self.max_requests) * 100 if self.max_requests > 0 else 0
+            
+            return {
+                'requests_used': requests_used,
+                'requests_max': self.max_requests,
+                'requests_remaining': requests_remaining,
+                'usage_percent': usage_percent
+            }
+            
+        except Exception as e:
+            logger.error(f"Erro ao obter estatísticas do rate limiter: {e}")
+            return {
+                'requests_used': 0,
+                'requests_max': self.max_requests,
+                'requests_remaining': self.max_requests,
+                'usage_percent': 0.0
+            }
+
     async def get_reset_time(self) -> Optional[datetime]:
         """
         Retorna quando o rate limit será resetado
