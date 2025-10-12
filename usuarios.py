@@ -28,6 +28,18 @@ class UserManager:
         """Remove um usuário"""
         self.db.delete_user(chat_id)
     
+    def block_user(self, chat_id: int):
+        """Bloqueia um usuário administrativamente"""
+        self.db.block_user(chat_id)
+    
+    def unblock_user(self, chat_id: int):
+        """Remove bloqueio de um usuário"""
+        self.db.unblock_user(chat_id)
+    
+    def is_user_blocked(self, chat_id: int) -> bool:
+        """Verifica se usuário está bloqueado"""
+        return self.db.is_user_blocked(chat_id)
+    
     def get_all_users(self) -> List[Dict]:
         """Retorna todos os usuários ativos"""
         return self.db.get_all_users()
