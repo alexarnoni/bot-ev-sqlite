@@ -180,9 +180,15 @@ def carregar_filtros_startup():
             chat_id = str(u["chat_id"]) if "chat_id" in u else None
             if chat_id is None:
                 continue
-            completo = db.get_user_complete(int(chat_id))
-            if completo:
-                filtros[chat_id] = completo
+            
+            # Só carregar se não estiver bloqueado
+            if not db.is_user_blocked(int(chat_id)):
+                completo = db.get_user_complete(int(chat_id))
+                if completo:
+                    filtros[chat_id] = completo
+            else:
+                logging.info(f"🚫 Usuário {chat_id} está bloqueado, não carregando filtros")
+                
         logging.info(f"✅ {len(filtros)} filtros carregados do banco normalizado")
         return filtros
     except Exception as exc:
@@ -1393,6 +1399,8 @@ async def admin_handler(update, context):
 /admin_users - Ver lista de usuários
 /admin_stats - Estatísticas detalhadas
 /admin_broadcast - Enviar mensagem para todos
+/admin_block_user - Bloquear usuário do bot
+/admin_unblock_user - Desbloquear usuário bloqueado
 """
     
     await update.message.reply_text(msg, parse_mode="HTML")
@@ -1405,23 +1413,35 @@ async def admin_users_handler(update, context):
         await update.message.reply_text("❌ Acesso negado.")
         return
     
-    if not filtros_por_chat:
+    # Buscar todos os usuários do banco (incluindo bloqueados)
+    all_users = db.get_all_users()
+    
+    if not all_users:
         await update.message.reply_text("🔭 Nenhum usuário cadastrado.")
         return
         
-    msg = "👥 <b>Usuários Ativos:</b>\n\n"
+    msg = "👥 <b>Usuários do Sistema:</b>\n\n"
     
-    for i, (user_chat_id, filtros) in enumerate(filtros_por_chat.items(), 1):
+    for i, user in enumerate(all_users, 1):
+        user_chat_id = str(user["chat_id"])
+        is_blocked = user.get("is_blocked", False)
+        
+        # Status icon
+        status_icon = "🚫" if is_blocked else "✅"
+        
         # Contar alertas do usuário
         total_alertas = _count_user_alerts(user_chat_id)
 
+        # Buscar filtros do usuário
+        filtros = filtros_por_chat.get(user_chat_id, {})
+        
         # Bookmakers do usuário
         bookmakers = filtros.get("bookmakers", [filtros.get("bookmaker", "Bet365")])
         if isinstance(bookmakers, str):
             bookmakers = [bookmakers]
 
-        nome = filtros.get("nome")
-        username = filtros.get("username")
+        nome = user.get("nome") or filtros.get("nome")
+        username = user.get("username") or filtros.get("username")
         nome_formatado = html.escape(nome) if nome else None
         username_limpo = username.lstrip("@") if username else None
         username_formatado = html.escape(username_limpo) if username_limpo else None
@@ -1435,7 +1455,7 @@ async def admin_users_handler(update, context):
         else:
             identificacao = "Usuário sem nome"
 
-        msg += f"<b>{i}.</b> {identificacao} — Chat ID: <code>{user_chat_id}</code>\n"
+        msg += f"<b>{i}.</b> {status_icon} {identificacao} — Chat ID: <code>{user_chat_id}</code>\n"
         msg += f"   • Bookmakers: {', '.join(bookmakers)}\n"
         msg += f"   • Total alertas: {total_alertas}\n"
         ligas_usuario = filtros.get("ligas")
@@ -1543,6 +1563,101 @@ async def admin_broadcast_handler(update, context):
         f"✅ Broadcast concluído!\n"
         f"• Enviados: {enviados}\n"
         f"• Falhas: {falhas}"
+    )
+
+# Comando para bloquear usuário
+async def admin_block_user_handler(update, context):
+    chat_id = str(update.effective_chat.id)
+    
+    if not is_admin(chat_id):
+        await update.message.reply_text("❌ Acesso negado.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Uso: /admin_block_user CHAT_ID\n"
+            "Use /admin_users para ver os IDs dos usuários."
+        )
+        return
+    
+    try:
+        target_chat_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ Chat ID inválido. Use apenas números.")
+        return
+    
+    # Verificar se usuário existe
+    user = db.get_user(target_chat_id)
+    if not user:
+        await update.message.reply_text(f"❌ Usuário {target_chat_id} não encontrado.")
+        return
+    
+    # Verificar se já está bloqueado
+    if db.is_user_blocked(target_chat_id):
+        await update.message.reply_text(f"⚠️ Usuário já está bloqueado.")
+        return
+    
+    # Bloquear usuário
+    db.block_user(target_chat_id)
+    
+    # Remover do cache de filtros
+    if str(target_chat_id) in filtros_por_chat:
+        del filtros_por_chat[str(target_chat_id)]
+    
+    nome = user.get('nome') or user.get('username') or 'Sem nome'
+    await update.message.reply_text(
+        f"✅ Usuário bloqueado com sucesso!\n\n"
+        f"👤 Nome: {nome}\n"
+        f"🆔 Chat ID: {target_chat_id}\n\n"
+        f"O usuário não receberá mais alertas até ser desbloqueado."
+    )
+
+# Comando para desbloquear usuário
+async def admin_unblock_user_handler(update, context):
+    chat_id = str(update.effective_chat.id)
+    
+    if not is_admin(chat_id):
+        await update.message.reply_text("❌ Acesso negado.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Uso: /admin_unblock_user CHAT_ID\n"
+            "Use /admin_users para ver os usuários bloqueados."
+        )
+        return
+    
+    try:
+        target_chat_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ Chat ID inválido. Use apenas números.")
+        return
+    
+    # Verificar se usuário existe
+    user = db.get_user(target_chat_id)
+    if not user:
+        await update.message.reply_text(f"❌ Usuário {target_chat_id} não encontrado.")
+        return
+    
+    # Verificar se está bloqueado
+    if not db.is_user_blocked(target_chat_id):
+        await update.message.reply_text(f"⚠️ Usuário não está bloqueado.")
+        return
+    
+    # Desbloquear usuário
+    db.unblock_user(target_chat_id)
+    
+    # Recarregar filtros do usuário
+    user_complete = db.get_user_complete(target_chat_id)
+    if user_complete and db.usuario_configurado(target_chat_id):
+        filtros_por_chat[str(target_chat_id)] = user_complete
+    
+    nome = user.get('nome') or user.get('username') or 'Sem nome'
+    await update.message.reply_text(
+        f"✅ Usuário desbloqueado com sucesso!\n\n"
+        f"👤 Nome: {nome}\n"
+        f"🆔 Chat ID: {target_chat_id}\n\n"
+        f"O usuário voltará a receber alertas normalmente."
     )
 
 async def ligas_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2864,6 +2979,8 @@ app.add_handler(CommandHandler("admin", admin_handler))
 app.add_handler(CommandHandler("admin_users", admin_users_handler))
 app.add_handler(CommandHandler("admin_stats", admin_stats_handler))
 app.add_handler(CommandHandler("admin_broadcast", admin_broadcast_handler))
+app.add_handler(CommandHandler("admin_block_user", admin_block_user_handler))
+app.add_handler(CommandHandler("admin_unblock_user", admin_unblock_user_handler))
 
 # Comandos de filtro por região
 app.add_handler(CommandHandler("brasil", set_brasil))

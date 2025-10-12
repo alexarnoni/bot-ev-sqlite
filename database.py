@@ -47,10 +47,18 @@ class Database:
                     username TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_active BOOLEAN DEFAULT 1
+                    is_active BOOLEAN DEFAULT 1,
+                    is_blocked BOOLEAN DEFAULT 0
                 )
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_users_blocked ON users(is_blocked)")
+            
+            # Adicionar coluna is_blocked se não existir (migration)
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN is_blocked BOOLEAN DEFAULT 0")
+            except Exception:
+                pass  # Coluna já existe
             
             # 2. Tabela user_bookmakers
             conn.execute("""
@@ -227,6 +235,31 @@ class Database:
         """Remove um usuário e todos os dados relacionados"""
         with self.get_connection() as conn:
             conn.execute("DELETE FROM users WHERE chat_id = ?", (chat_id,))
+    
+    def block_user(self, chat_id: int):
+        """Bloqueia um usuário administrativamente"""
+        with self.get_connection() as conn:
+            conn.execute("""
+                UPDATE users SET is_blocked = 1, updated_at = CURRENT_TIMESTAMP 
+                WHERE chat_id = ?
+            """, (chat_id,))
+    
+    def unblock_user(self, chat_id: int):
+        """Remove bloqueio administrativo de um usuário"""
+        with self.get_connection() as conn:
+            conn.execute("""
+                UPDATE users SET is_blocked = 0, updated_at = CURRENT_TIMESTAMP 
+                WHERE chat_id = ?
+            """, (chat_id,))
+    
+    def is_user_blocked(self, chat_id: int) -> bool:
+        """Verifica se usuário está bloqueado"""
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT is_blocked FROM users WHERE chat_id = ?", 
+                (chat_id,)
+            ).fetchone()
+            return bool(row['is_blocked']) if row else False
     
     def usuario_configurado(self, chat_id: int) -> bool:
         """Verifica se o usuário tem configuração completa"""
@@ -549,6 +582,7 @@ class Database:
         with self.get_connection() as conn:
             rows = conn.execute("""
                 SELECT u.*, 
+                       u.is_blocked,
                        COUNT(DISTINCT ub.bookmaker) as num_bookmakers,
                        COUNT(DISTINCT ah.id) as total_alertas
                 FROM users u
