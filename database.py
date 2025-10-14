@@ -129,6 +129,8 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_cache_chat ON alert_cache(chat_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_cache_hash ON alert_cache(alert_hash)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_cache_created ON alert_cache(created_at)")
+            # Índice composto para otimizar a query mais frequente: WHERE chat_id = ? AND alert_hash = ?
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_cache_composite ON alert_cache(chat_id, alert_hash)")
             
             # 7. Tabela alert_history
             conn.execute("""
