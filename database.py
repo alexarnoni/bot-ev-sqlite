@@ -51,14 +51,14 @@ class Database:
                     is_blocked BOOLEAN DEFAULT 0
                 )
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_users_blocked ON users(is_blocked)")
-            
             # Adicionar coluna is_blocked se não existir (migration)
             try:
                 conn.execute("ALTER TABLE users ADD COLUMN is_blocked BOOLEAN DEFAULT 0")
             except Exception:
                 pass  # Coluna já existe
+            
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_users_blocked ON users(is_blocked)")
             
             # 2. Tabela user_bookmakers
             conn.execute("""
