@@ -216,7 +216,7 @@ def formatar_nome_bookmaker(bookmaker: str) -> str:
             'pinnacle': 'Pinnacle',
             'betfair': 'Betfair',
             'sportingbet': 'Sportingbet',
-            'betano': 'Betano',
+            'betnacional': 'Betnacional',
             'betboo': 'Betboo',
             'betclic': 'Betclic',
             'betfred': 'Betfred',
