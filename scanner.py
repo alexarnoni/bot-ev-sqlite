@@ -124,6 +124,7 @@ async def scan_apostas_usuario(chat_id: str):
 async def _buscar_usuarios_ativos() -> List[Dict[str, Any]]:
     """
     Busca usuários ativos com suas configurações
+    Otimizado: 1 query com JOINs em vez de N+1 queries
     """
     try:
         async with db_pool.get_connection() as conn:
@@ -137,31 +138,27 @@ async def _buscar_usuarios_ativos() -> List[Dict[str, Any]]:
                     uf.horario_fim,
                     uf.data_inicio,
                     uf.data_fim,
-                    uf.filtro_dias
+                    uf.filtro_dias,
+                    GROUP_CONCAT(DISTINCT ul.league) as ligas,
+                    GROUP_CONCAT(DISTINCT us.sport) as esportes,
+                    GROUP_CONCAT(DISTINCT ub.bookmaker) as bookmakers
                 FROM users u
                 LEFT JOIN user_filters uf ON u.chat_id = uf.chat_id
-                WHERE u.is_active = 1
+                LEFT JOIN user_leagues ul ON u.chat_id = ul.chat_id
+                LEFT JOIN user_sports us ON u.chat_id = us.chat_id
+                LEFT JOIN user_bookmakers ub ON u.chat_id = ub.chat_id
+                WHERE u.is_active = 1 AND (u.is_blocked IS NULL OR u.is_blocked = 0)
+                GROUP BY u.chat_id, u.nome, uf.ev_faixa_min, uf.ev_faixa_max, 
+                         uf.horario_inicio, uf.horario_fim, uf.data_inicio, 
+                         uf.data_fim, uf.filtro_dias
             """)
             
             usuarios = []
             for row in await cursor.fetchall():
-                # Busca ligas do usuário (schema: user_leagues.league)
-                cursor_ligas = await conn.execute("""
-                    SELECT league FROM user_leagues WHERE chat_id = ?
-                """, (row['chat_id'],))
-                ligas = [liga['league'] for liga in await cursor_ligas.fetchall()]
-                
-                # Busca esportes do usuário (schema: user_sports.sport)
-                cursor_esportes = await conn.execute("""
-                    SELECT sport FROM user_sports WHERE chat_id = ?
-                """, (row['chat_id'],))
-                esportes = [esporte['sport'] for esporte in await cursor_esportes.fetchall()]
-                
-                # Busca bookmakers do usuário (schema: user_bookmakers.bookmaker)
-                cursor_bookmakers = await conn.execute("""
-                    SELECT bookmaker FROM user_bookmakers WHERE chat_id = ?
-                """, (row['chat_id'],))
-                bookmakers = [bm['bookmaker'] for bm in await cursor_bookmakers.fetchall()]
+                # Converte GROUP_CONCAT strings para listas
+                ligas = row['ligas'].split(',') if row['ligas'] else []
+                esportes = row['esportes'].split(',') if row['esportes'] else []
+                bookmakers = row['bookmakers'].split(',') if row['bookmakers'] else []
                 
                 usuario = {
                     'chat_id': row['chat_id'],
@@ -190,6 +187,7 @@ async def _buscar_usuarios_ativos() -> List[Dict[str, Any]]:
 async def _buscar_usuario_especifico(chat_id: str) -> Dict[str, Any]:
     """
     Busca um usuário específico com suas configurações
+    Otimizado: 1 query com JOINs em vez de 4 queries
     """
     try:
         async with db_pool.get_connection() as conn:
@@ -203,33 +201,29 @@ async def _buscar_usuario_especifico(chat_id: str) -> Dict[str, Any]:
                     uf.horario_fim,
                     uf.data_inicio,
                     uf.data_fim,
-                    uf.filtro_dias
+                    uf.filtro_dias,
+                    GROUP_CONCAT(DISTINCT ul.league) as ligas,
+                    GROUP_CONCAT(DISTINCT us.sport) as esportes,
+                    GROUP_CONCAT(DISTINCT ub.bookmaker) as bookmakers
                 FROM users u
                 LEFT JOIN user_filters uf ON u.chat_id = uf.chat_id
-                WHERE u.chat_id = ? AND u.is_active = 1
+                LEFT JOIN user_leagues ul ON u.chat_id = ul.chat_id
+                LEFT JOIN user_sports us ON u.chat_id = us.chat_id
+                LEFT JOIN user_bookmakers ub ON u.chat_id = ub.chat_id
+                WHERE u.chat_id = ? AND u.is_active = 1 AND (u.is_blocked IS NULL OR u.is_blocked = 0)
+                GROUP BY u.chat_id, u.nome, uf.ev_faixa_min, uf.ev_faixa_max, 
+                         uf.horario_inicio, uf.horario_fim, uf.data_inicio, 
+                         uf.data_fim, uf.filtro_dias
             """, (chat_id,))
             
             row = await cursor.fetchone()
             if not row:
                 return None
             
-            # Busca ligas do usuário
-            cursor_ligas = await conn.execute("""
-                SELECT league FROM user_leagues WHERE chat_id = ?
-            """, (chat_id,))
-            ligas = [liga['league'] for liga in await cursor_ligas.fetchall()]
-            
-            # Busca esportes do usuário
-            cursor_esportes = await conn.execute("""
-                SELECT sport FROM user_sports WHERE chat_id = ?
-            """, (chat_id,))
-            esportes = [esporte['sport'] for esporte in await cursor_esportes.fetchall()]
-            
-            # Busca bookmakers do usuário
-            cursor_bookmakers = await conn.execute("""
-                SELECT bookmaker FROM user_bookmakers WHERE chat_id = ?
-            """, (chat_id,))
-            bookmakers = [bm['bookmaker'] for bm in await cursor_bookmakers.fetchall()]
+            # Converte GROUP_CONCAT strings para listas
+            ligas = row['ligas'].split(',') if row['ligas'] else []
+            esportes = row['esportes'].split(',') if row['esportes'] else []
+            bookmakers = row['bookmakers'].split(',') if row['bookmakers'] else []
             
             usuario = {
                 'chat_id': row['chat_id'],
