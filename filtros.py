@@ -291,13 +291,14 @@ def is_american_sport(sport_slug: str) -> bool:
     """
     Verifica se um esporte é americano baseado no slug da API
     Slugs corretos da API odds-api.io
+    NOTA: 'football' (soccer) precisa validação extra de liga
+    NOTA: API retorna com ESPAÇO, não hífen!
     """
     american_sports = [
-        'american-football',  # NFL, NCAAF
+        'american football',  # NFL, NCAAF (API retorna com espaço!)
         'basketball',         # NBA, WNBA, NCAA
         'baseball',           # MLB
-        'ice-hockey',         # NHL, AHL, ECHL
-        'football'            # MLS, USL (soccer nos EUA)
+        'ice hockey',         # NHL, AHL, ECHL (API retorna com espaço!)
     ]
     return sport_slug in american_sports
 
@@ -325,7 +326,8 @@ def is_american_league(league_name: str) -> bool:
 def validar_esporte_americano(evento: Dict[str, Any], feed_id: str) -> bool:
     """
     Valida se um evento é de esporte americano (para feed_american)
-    Apenas eventos com sport slug americano são aceitos
+    Aceita apenas esportes americanos puros (NFL, NBA, MLB, NHL)
+    ou soccer (football) de ligas americanas (MLS, USL)
     """
     if feed_id != 'feed_american':
         return True  # Não aplica restrição para outros feeds
@@ -337,13 +339,23 @@ def validar_esporte_americano(evento: Dict[str, Any], feed_id: str) -> bool:
     import logging
     logger = logging.getLogger(__name__)
     
-    # Verifica se é esporte americano (apenas pelo sport slug)
-    if not is_american_sport(sport_slug):
-        logger.info(f"❌ Evento rejeitado - Sport não americano: {sport_slug} | Liga: {league_name}")
-        return False
+    # Verifica se é esporte americano puro (NFL, NBA, MLB, NHL)
+    if is_american_sport(sport_slug):
+        logger.info(f"✅ Evento aceito - Sport americano puro: {sport_slug} | Liga: {league_name}")
+        return True
     
-    logger.info(f"✅ Evento aceito - Sport: {sport_slug} | Liga: {league_name}")
-    return True
+    # Para soccer (football), aceita APENAS ligas americanas (MLS, USL)
+    if sport_slug == 'football':
+        if is_american_league(league_name):
+            logger.info(f"✅ Evento aceito - Soccer americano: {sport_slug} | Liga: {league_name}")
+            return True
+        else:
+            logger.info(f"❌ Evento rejeitado - Soccer não americano: {sport_slug} | Liga: {league_name}")
+            return False
+    
+    # Qualquer outro esporte é rejeitado
+    logger.info(f"❌ Evento rejeitado - Sport não americano: {sport_slug} | Liga: {league_name}")
+    return False
 
 def validar_player_prop(evento: Dict[str, Any], filtros_usuario: Dict[str, Any], feed_id: str) -> bool:
     """
