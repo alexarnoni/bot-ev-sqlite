@@ -326,8 +326,12 @@ def is_american_league(league_name: str) -> bool:
 def validar_esporte_americano(evento: Dict[str, Any], feed_id: str) -> bool:
     """
     Valida se um evento é de esporte americano (para feed_american)
-    Aceita apenas esportes americanos puros (NFL, NBA, MLB, NHL)
-    ou soccer (football) de ligas americanas (MLS, USL)
+    Aceita apenas:
+    - NFL/NCAAF (american football + liga americana)
+    - NBA/WNBA/NCAA (basketball + liga americana)
+    - MLB (baseball + liga americana)
+    - NHL/AHL (ice hockey + liga americana)
+    - MLS/USL (football/soccer + liga americana)
     """
     if feed_id != 'feed_american':
         return True  # Não aplica restrição para outros feeds
@@ -339,22 +343,54 @@ def validar_esporte_americano(evento: Dict[str, Any], feed_id: str) -> bool:
     import logging
     logger = logging.getLogger(__name__)
     
-    # Verifica se é esporte americano puro (NFL, NBA, MLB, NHL)
-    if is_american_sport(sport_slug):
-        logger.info(f"✅ Evento aceito - Sport americano puro: {sport_slug} | Liga: {league_name}")
-        return True
-    
-    # Para soccer (football), aceita APENAS ligas americanas (MLS, USL)
-    if sport_slug == 'football':
+    # American Football: SEMPRE validar liga (NFL, NCAAF)
+    if sport_slug == 'american football':
         if is_american_league(league_name):
-            logger.info(f"✅ Evento aceito - Soccer americano: {sport_slug} | Liga: {league_name}")
+            logger.info(f"✅ Evento aceito - American Football: {league_name}")
             return True
         else:
-            logger.info(f"❌ Evento rejeitado - Soccer não americano: {sport_slug} | Liga: {league_name}")
+            logger.info(f"❌ Evento rejeitado - American Football não americano: {league_name}")
+            return False
+    
+    # Basketball: SEMPRE validar liga (NBA, WNBA, NCAA)
+    # Rejeita ligas europeias (BNXT, ABA Liga, etc)
+    if sport_slug == 'basketball':
+        if is_american_league(league_name):
+            logger.info(f"✅ Evento aceito - Basketball americano: {league_name}")
+            return True
+        else:
+            logger.info(f"❌ Evento rejeitado - Basketball não americano: {league_name}")
+            return False
+    
+    # Baseball: SEMPRE validar liga (MLB)
+    if sport_slug == 'baseball':
+        if is_american_league(league_name):
+            logger.info(f"✅ Evento aceito - Baseball americano: {league_name}")
+            return True
+        else:
+            logger.info(f"❌ Evento rejeitado - Baseball não americano: {league_name}")
+            return False
+    
+    # Ice Hockey: SEMPRE validar liga (NHL, AHL, ECHL)
+    if sport_slug == 'ice hockey':
+        if is_american_league(league_name):
+            logger.info(f"✅ Evento aceito - Ice Hockey americano: {league_name}")
+            return True
+        else:
+            logger.info(f"❌ Evento rejeitado - Ice Hockey não americano: {league_name}")
+            return False
+    
+    # Soccer (football): SEMPRE validar liga (MLS, USL)
+    if sport_slug == 'football':
+        if is_american_league(league_name):
+            logger.info(f"✅ Evento aceito - Soccer americano: {league_name}")
+            return True
+        else:
+            logger.info(f"❌ Evento rejeitado - Soccer não americano: {league_name}")
             return False
     
     # Qualquer outro esporte é rejeitado
-    logger.info(f"❌ Evento rejeitado - Sport não americano: {sport_slug} | Liga: {league_name}")
+    logger.info(f"❌ Evento rejeitado - Sport não americano: {sport_slug}")
     return False
 
 def validar_player_prop(evento: Dict[str, Any], filtros_usuario: Dict[str, Any], feed_id: str) -> bool:
