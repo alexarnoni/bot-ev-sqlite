@@ -322,14 +322,21 @@ def validar_esporte_americano(evento: Dict[str, Any], feed_id: str) -> bool:
     sport_slug = evento.get('sport', '').lower()
     league_name = evento.get('league', '')
     
+    # DEBUG: Log para verificar o que está sendo filtrado
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # Verifica se é esporte americano
     if not is_american_sport(sport_slug):
+        logger.info(f"❌ Evento rejeitado - Sport não americano: {sport_slug} | Liga: {league_name}")
         return False
     
     # Verifica se é liga americana
     if not is_american_league(league_name):
+        logger.info(f"❌ Evento rejeitado - Liga não americana: {league_name} | Sport: {sport_slug}")
         return False
     
+    logger.info(f"✅ Evento aceito - Sport: {sport_slug} | Liga: {league_name}")
     return True
 
 def validar_player_prop(evento: Dict[str, Any], filtros_usuario: Dict[str, Any], feed_id: str) -> bool:
