@@ -20,7 +20,7 @@ class OddsAPI:
         print(f"✅ API Client inicializada (key: {self.api_key[:8]}...)")
         # Lista de bookmakers suportados pela integração atual
         self.allowed_bookmakers = [
-            'Bet365', 'Betfair Sportsbook', 'Novibet', 'Superbet', 'BetMGM'
+            'Bet365', 'Betfair Sportsbook', 'Novibet', 'Superbet', 'BetMGM', 'Betano'
         ]
     
     def _check_rate_limit(self) -> bool:
@@ -58,7 +58,7 @@ class OddsAPI:
             away_team = bet['event'].get('away', '')
             
             # Para player props, extrai o nome do jogador
-            if 'player props' in market_name or 'player' in market_name:
+            if self._is_player_prop_market(market_name, bet):
                 # Tenta extrair nome do jogador do market name
                 player_name = self._extract_player_name(market_name, bet)
                 bet_side_display = player_name if player_name else bet_side.title()
@@ -74,6 +74,9 @@ class OddsAPI:
             # Mapeia market para market_type
             market_type = self._map_market_type(market_name)
 
+            # Verifica se é player prop
+            is_player_prop = self._is_player_prop_market(market_name, bet)
+            
             return {
                 "home": home_team,
                 "away": away_team,
@@ -94,11 +97,38 @@ class OddsAPI:
                 "ev": (bet.get('expectedValue', 0) / 100) - 1,
                 "event_url": odds.get('href', ''),
                 "bookmaker": bookmaker,
+                "is_player_prop": is_player_prop,  # Novo campo para identificar props
                 "raw_bet": bet  # Mantém dados originais para player props
             }
         except Exception as e:
             print(f"Erro ao processar aposta: {e}")
             return None
+
+    def _is_player_prop_market(self, market_name: str, bet: dict) -> bool:
+        """
+        Verifica se um mercado é de player props
+        """
+        if not market_name:
+            return False
+        
+        market_lower = market_name.lower()
+        
+        # Verifica palavras-chave de props
+        prop_keywords = [
+            'props', 'player props', 'player', 'points', 'yards', 
+            'touchdowns', 'rebounds', 'assists', 'strikeouts',
+            'home runs', 'goals', 'shots', 'steals', 'blocks'
+        ]
+        
+        # Verifica se contém alguma palavra-chave
+        if any(keyword in market_lower for keyword in prop_keywords):
+            return True
+        
+        # Verifica se tem campo 'label' (formato novo da API)
+        if 'label' in str(bet):
+            return True
+            
+        return False
 
     def _extract_player_name(self, market_name: str, bet: dict) -> str:
         """

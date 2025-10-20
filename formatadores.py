@@ -1073,3 +1073,85 @@ def formatar_nome_pais(pais: str) -> str:
         
     except Exception:
         return pais.title()
+
+def formatar_alerta_player_prop(evento: dict) -> str:
+    """
+    Formata alerta para player props
+    """
+    try:
+        # Dados básicos
+        ev = evento.get('ev', 0)
+        odd = evento.get('bet365_odds', 0)
+        stake = evento.get('stake', 0)
+        bookmaker = evento.get('bookmaker', '')
+        player_name = evento.get('bet_side', '')
+        market_name = evento.get('market_name', '')
+        hdp = evento.get('hdp', '')
+        
+        # Formata EV
+        ev_str = formatar_ev(ev)
+        
+        # Formata odd
+        odd_str = formatar_odd(odd)
+        
+        # Formata stake
+        stake_str = formatar_stake(stake)
+        
+        # Extrai tipo de prop do market name
+        prop_type = _extrair_tipo_prop(market_name)
+        
+        # Formata linha (hdp) se existir
+        linha_str = ""
+        if hdp:
+            try:
+                linha_float = float(hdp)
+                linha_str = f" O/U {linha_float:.1f}"
+            except (TypeError, ValueError):
+                pass
+        
+        # Monta o alerta
+        alerta = f"🎯 EV+ {ev_str} | PLAYER PROP\n"
+        alerta += f"👤 {player_name} - {prop_type}{linha_str}\n"
+        alerta += f"💰 Odd: {odd_str} | Stake: {stake_str}u\n"
+        alerta += f"🏦 {bookmaker}"
+        
+        return alerta
+        
+    except Exception as e:
+        return f"Erro ao formatar player prop: {e}"
+
+def _extrair_tipo_prop(market_name: str) -> str:
+    """
+    Extrai o tipo de prop do nome do mercado
+    """
+    if not market_name:
+        return "Prop"
+    
+    market_lower = market_name.lower()
+    
+    # Mapeia tipos de props
+    prop_types = {
+        'points': 'Points',
+        'yards': 'Yards', 
+        'touchdowns': 'Touchdowns',
+        'rebounds': 'Rebounds',
+        'assists': 'Assists',
+        'steals': 'Steals',
+        'blocks': 'Blocks',
+        'strikeouts': 'Strikeouts',
+        'home runs': 'Home Runs',
+        'hits': 'Hits',
+        'rbis': 'RBIs',
+        'goals': 'Goals',
+        'shots': 'Shots',
+        'receptions': 'Receptions',
+        'completions': 'Completions'
+    }
+    
+    # Procura por tipo de prop
+    for keyword, display_name in prop_types.items():
+        if keyword in market_lower:
+            return display_name
+    
+    # Fallback: usa o market name capitalizado
+    return market_name.title()

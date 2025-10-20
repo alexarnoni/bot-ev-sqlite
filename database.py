@@ -88,6 +88,11 @@ class Database:
                     FOREIGN KEY (chat_id) REFERENCES users(chat_id) ON DELETE CASCADE
                 )
             """)
+            # Adicionar coluna include_props se não existir (migration)
+            try:
+                conn.execute("ALTER TABLE user_filters ADD COLUMN include_props INTEGER DEFAULT 0")
+            except Exception:
+                pass  # Coluna já existe
             
             # 4. Tabela user_leagues
             conn.execute("""

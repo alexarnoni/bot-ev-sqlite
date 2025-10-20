@@ -21,6 +21,7 @@ FEED_TOKENS = {
     "feed4": os.getenv("BOT_TOKEN_FEED4"),
     "feed5": os.getenv("BOT_TOKEN_FEED5"),
     "feed_test": os.getenv("BOT_TOKEN_FEED_TEST"),
+    "feed_american": os.getenv("BOT_TOKEN_FEED_AMERICAN"),
 }
 
 # API Odds
