@@ -305,23 +305,39 @@ def is_american_sport(sport_slug: str) -> bool:
 def is_american_league(league_name: str) -> bool:
     """
     Verifica se uma liga é americana
-    Baseado nos league slugs reais da API odds-api.io
+    Baseado nos nomes EXATOS retornados pela API odds-api.io
     """
     if not league_name:
         return False
     
-    # Slugs de ligas americanas da API
-    american_league_slugs = [
-        'usa-nfl', 'usa-ncaa-regular-season',  # Football
-        'usa-nba', 'usa-wnba', 'usa-ncaa-regular-season', 'usa-ncaa-women',  # Basketball
-        'usa-mlb',  # Baseball
-        'usa-nhl', 'usa-ahl', 'usa-echl',  # Ice Hockey
-        'usa-mls', 'usa-usl-championship', 'usa-usl-league-one', 'usa-national-womens-soccer-league'  # Soccer
+    # Nomes EXATOS de ligas americanas como retornados pela API
+    # Formato: "USA - NOME_DA_LIGA"
+    american_league_patterns = [
+        # American Football
+        'usa - nfl',
+        'usa - ncaa',  # Inclui "USA - NCAA, Regular Season"
+        
+        # Basketball
+        'usa - nba',
+        'usa - wnba',
+        
+        # Baseball
+        'usa - mlb',
+        
+        # Ice Hockey
+        'usa - nhl',
+        'usa - ahl',
+        'usa - echl',
+        
+        # Soccer
+        'usa - mls',
+        'usa - usl',  # Inclui "USA - USL Championship", "USA - USL League One"
+        'usa - national womens soccer league',
     ]
     
-    # Converte league_name para lowercase e verifica
+    # Converte para lowercase e verifica se contém algum padrão
     league_lower = league_name.lower()
-    return any(american_slug in league_lower for american_slug in american_league_slugs)
+    return any(pattern in league_lower for pattern in american_league_patterns)
 
 def validar_esporte_americano(evento: Dict[str, Any], feed_id: str) -> bool:
     """
