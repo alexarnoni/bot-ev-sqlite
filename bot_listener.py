@@ -618,9 +618,12 @@ async def toggle_american_sport_callback(update, context):
     # Toggle da liga também
     ligas_ativas = db.get_user_leagues(chat_id)
     if league_name in ligas_ativas:
-        db.remove_user_league(chat_id, league_name)
+        ligas_ativas.remove(league_name)
     else:
-        db.add_user_league(chat_id, league_name)
+        ligas_ativas.append(league_name)
+    
+    # Salva a lista atualizada
+    db.set_user_leagues(chat_id, ligas_ativas)
     
     await query.answer(f"✅ {league_name} {action}!")
     
