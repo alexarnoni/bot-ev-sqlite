@@ -380,9 +380,10 @@ async def start_usuario_configurado_americano(update, context, filtros_usuario):
     
     # Menu principal do feed americano
     keyboard = [
-        [InlineKeyboardButton("📊 Fazer Scan", callback_data="scan_manual")],
+        [InlineKeyboardButton("📊 Fazer Scan", callback_data="scan_manual_american")],
         [InlineKeyboardButton("⚙️ Configurações", callback_data="config_american")],
-        [InlineKeyboardButton("🏈 Esportes", callback_data="esportes_americanos")]
+        [InlineKeyboardButton("🏈 Esportes", callback_data="esportes_americanos")],
+        [InlineKeyboardButton("📜 Ver Histórico", callback_data="ver_historico_american")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -514,7 +515,7 @@ async def setup_american_finalizar_callback(update, context):
     db.set_user_leagues(chat_id, ligas_americanas)
     
     keyboard = [
-        [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual")],
+        [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual_american")],
         [InlineKeyboardButton("⚙️ Configurações", callback_data="config_american")]
     ]
     
@@ -531,6 +532,17 @@ async def setup_american_finalizar_callback(update, context):
     mensagem += "Bot ativo e monitorando oportunidades!"
     
     await query.edit_message_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
+
+async def start_inicial_american_callback(update, context):
+    """Retorna ao menu principal do feed americano"""
+    query = update.callback_query
+    await query.answer()
+    
+    chat_id = str(query.message.chat_id)
+    filtros_usuario, _ = atualizar_info_usuario(chat_id, query.from_user)
+    
+    # Redireciona para o menu principal do feed americano
+    await start_usuario_configurado_americano(update, context, filtros_usuario)
 
 async def setup_american_bookmakers_callback(update, context):
     """Seleção de bookmakers para feed americano"""
@@ -1292,6 +1304,73 @@ async def scan_manual_inline_callback(update, context):
         f"✅ <b>Scan Concluído!</b>\n\n{resultado}",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="HTML"
+    )
+
+async def scan_manual_american_callback(update, context):
+    """Scan manual exclusivo para feed americano"""
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text("🔎 <b>Iniciando scan...</b>\n\n⏳ Analisando mercado americano...", parse_mode="HTML")
+    
+    chat_id = str(query.message.chat_id)
+    resultado = await scan_apostas_usuario(chat_id)
+    
+    keyboard = [
+        [InlineKeyboardButton("🔄 Novo Scan", callback_data="scan_manual_american")],
+        [InlineKeyboardButton("🏠 Menu Principal", callback_data="start_inicial_american")],
+    ]
+    
+    await query.edit_message_text(
+        f"✅ <b>Scan Concluído!</b>\n\n{resultado}",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
+    )
+
+async def ver_historico_american_callback(update, context):
+    """Mostra histórico de alertas do usuário - Feed Americano"""
+    query = update.callback_query
+    await query.answer()
+    
+    chat_id = str(query.message.chat_id)
+    
+    alertas = _fetch_alert_history(chat_id)
+
+    if alertas:
+        total_alertas = len(alertas)
+        evs = [float(row["ev"]) for row in alertas if row.get("ev") is not None]
+        ev_medio = sum(evs) / len(evs) if evs else 0
+        ultimos = alertas[-5:]
+
+        msg = f"📈 <b>Histórico - Feed Americano</b>\n\n"
+        msg += f"📊 <b>Estatísticas:</b>\n"
+        msg += f"• Total de alertas: {total_alertas}\n"
+        msg += f"• EV médio: {ev_medio:.2%}\n\n"
+        msg += "🕐 <b>Últimos 5 alertas:</b>\n"
+
+        for i, alerta in enumerate(reversed(ultimos), 1):
+            data_envio = alerta.get("data_envio")
+            data = data_envio[:10] if isinstance(data_envio, str) else ""
+            home = alerta.get("home", "") or ""
+            away = alerta.get("away", "") or ""
+            ev = float(alerta.get("ev", 0) or 0)
+
+            msg += f"{i}. {home} vs {away}\n"
+            msg += f"   📅 {data} | 📈 {ev:.1%}\n"
+    else:
+        msg = (
+            "📈 <b>Histórico - Feed Americano</b>\n\n"
+            "📭 Você ainda não recebeu alertas.\n\n"
+            "💡 <b>Dica:</b> Faça um scan manual para testar sua configuração!"
+        )
+    
+    keyboard = [
+        [InlineKeyboardButton("🔍 Fazer Scan Manual", callback_data="scan_manual_american")],
+        [InlineKeyboardButton("🏠 Menu Principal", callback_data="start_inicial_american")],
+    ]
+    
+    await query.edit_message_text(
+        msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
     )
 
 async def start_inicial_callback(update, context):
@@ -2911,6 +2990,18 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "toggle_props":
         await toggle_props_callback(update, context)
+        return
+
+    elif data == "scan_manual_american":
+        await scan_manual_american_callback(update, context)
+        return
+
+    elif data == "start_inicial_american":
+        await start_inicial_american_callback(update, context)
+        return
+
+    elif data == "ver_historico_american":
+        await ver_historico_american_callback(update, context)
         return
 
     elif data == "start_inicial":
