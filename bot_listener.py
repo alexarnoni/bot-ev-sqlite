@@ -382,8 +382,7 @@ async def start_usuario_configurado_americano(update, context, filtros_usuario):
     keyboard = [
         [InlineKeyboardButton("📊 Fazer Scan", callback_data="scan_manual_american")],
         [InlineKeyboardButton("⚙️ Configurações", callback_data="config_american")],
-        [InlineKeyboardButton("🏈 Esportes", callback_data="esportes_americanos")],
-        [InlineKeyboardButton("📜 Ver Histórico", callback_data="ver_historico_american")]
+        [InlineKeyboardButton("🏈 Esportes", callback_data="esportes_americanos")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -555,12 +554,10 @@ async def setup_american_bookmakers_callback(update, context):
     # Bookmakers atuais
     bookmakers_atuais = db.get_user_bookmakers(chat_id)
     
-    # Bookmakers disponíveis (focando nos americanos)
+    # Bookmakers disponíveis (focando nos disponíveis no Brasil)
     bookmakers_disponiveis = [
         ("Bet365", "Bet365"),
-        ("BetMGM", "BetMGM"), 
-        ("DraftKings", "DraftKings"),
-        ("FanDuel", "FanDuel"),
+        ("BetMGM", "BetMGM"),
         ("Betano", "Betano"),
         ("Betfair Sportsbook", "Betfair Sportsbook"),
         ("Novibet", "Novibet"),
@@ -580,8 +577,8 @@ async def setup_american_bookmakers_callback(update, context):
     
     mensagem = "🏦 <b>Casas de Apostas - Feed Americano</b>\n\n"
     mensagem += "Escolha as casas de apostas:\n\n"
-    mensagem += "💡 <b>Recomendadas para Player Props:</b>\n"
-    mensagem += "• DraftKings, FanDuel, BetMGM\n\n"
+    mensagem += "💡 <b>Recomendadas:</b>\n"
+    mensagem += "• Bet365, BetMGM, Betfair Sportsbook\n\n"
     mensagem += "Clique para ativar/desativar:"
     
     await query.edit_message_text(
