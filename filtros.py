@@ -259,17 +259,23 @@ def validar_filtros(evento, filtros_usuario, ligas_usuario, esportes_usuario, bo
 def validar_filtros_usuario(evento, filtros_usuario, ligas_usuario, esportes_usuario, bookmakers_usuario):
     """
     Valida filtros específicos do usuário
+    NOTA: Para feed_american, ligas/esportes são validados em validar_filtros_americanos()
     """
     try:
-        # Verifica ligas
-        if ligas_usuario and evento.get("league") not in ligas_usuario:
-            return False
+        from config import FEED_ID
         
-        # Verifica esportes
-        if esportes_usuario and evento.get("sport") not in esportes_usuario:
-            return False
+        # Para feed americano, NÃO valida ligas/esportes aqui
+        # A validação é feita em validar_filtros_americanos() usando os slugs corretos da API
+        if FEED_ID != 'feed_american':
+            # Verifica ligas (apenas para feeds normais)
+            if ligas_usuario and evento.get("league") not in ligas_usuario:
+                return False
+            
+            # Verifica esportes (apenas para feeds normais)
+            if esportes_usuario and evento.get("sport") not in esportes_usuario:
+                return False
         
-        # Verifica bookmakers
+        # Verifica bookmakers (sempre aplica)
         if bookmakers_usuario and evento.get("bookmaker") not in bookmakers_usuario:
             return False
         
