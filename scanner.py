@@ -8,7 +8,7 @@ from typing import List, Dict, Any
 
 from api_client import OddsAPI
 from database import SQLiteConnectionPool, SQLiteConnectionConfig
-from filtros import evento_valido, aplicar_filtros_dinamicos, validar_filtros_usuario
+from filtros import evento_valido, aplicar_filtros_dinamicos, validar_filtros_usuario, validar_filtros_americanos
 from rate_limiter import api_rate_limiter
 from status import get_odds_api_status
 from utils import carregar_catalogo_ligas
@@ -332,6 +332,10 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
             bookmakers_usuario = usuario.get('bookmakers', [])
             
             if not validar_filtros_usuario(aposta, filtros, ligas_usuario, esportes_usuario, bookmakers_usuario):
+                continue
+            
+            # Aplica filtros específicos do feed americano
+            if not validar_filtros_americanos(aposta, filtros, FEED_ID):
                 continue
             
             # Aplica filtros dinâmicos (MESMA LÓGICA)
