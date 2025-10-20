@@ -591,12 +591,15 @@ async def toggle_american_sport_callback(update, context):
     
     if sport_slug in esportes_ativos:
         # Remove esporte
-        db.remove_user_sport(chat_id, sport_slug)
+        esportes_ativos.remove(sport_slug)
         action = "removido"
     else:
         # Adiciona esporte
-        db.add_user_sport(chat_id, sport_slug)
+        esportes_ativos.append(sport_slug)
         action = "adicionado"
+    
+    # Salva a lista atualizada
+    db.set_user_sports(chat_id, esportes_ativos)
     
     # Mapeia esporte para liga correspondente
     sport_to_league = {
