@@ -612,7 +612,7 @@ async def config_american_callback(update, context):
         [InlineKeyboardButton("📈 EV Mínimo", callback_data="ev_menu")],
         [InlineKeyboardButton(f"🎯 Player Props {'✅' if include_props else '❌'}", callback_data="toggle_props")],
         [InlineKeyboardButton("🏈 Esportes", callback_data="esportes_americanos")],
-        [InlineKeyboardButton("🔙 Voltar", callback_data="start_inicial")]
+        [InlineKeyboardButton("🔙 Voltar", callback_data="start_inicial_american")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
