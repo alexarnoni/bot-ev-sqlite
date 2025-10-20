@@ -532,6 +532,52 @@ async def setup_american_finalizar_callback(update, context):
     
     await query.edit_message_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
 
+async def setup_american_bookmakers_callback(update, context):
+    """Seleção de bookmakers para feed americano"""
+    query = update.callback_query
+    await query.answer()
+    
+    chat_id = str(query.message.chat_id)
+    db = get_db()
+    
+    # Bookmakers atuais
+    bookmakers_atuais = db.get_user_bookmakers(chat_id)
+    
+    # Bookmakers disponíveis (focando nos americanos)
+    bookmakers_disponiveis = [
+        ("Bet365", "Bet365"),
+        ("BetMGM", "BetMGM"), 
+        ("DraftKings", "DraftKings"),
+        ("FanDuel", "FanDuel"),
+        ("Betano", "Betano"),
+        ("Betfair Sportsbook", "Betfair Sportsbook"),
+        ("Novibet", "Novibet"),
+        ("Superbet", "Superbet")
+    ]
+    
+    keyboard = []
+    for nome, valor in bookmakers_disponiveis:
+        status = "✅" if valor in bookmakers_atuais else "❌"
+        button_text = f"{status} {nome}"
+        callback_data = f"toggle_american_bookmaker|{valor}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Voltar", callback_data="config_american")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    mensagem = "🏦 <b>Casas de Apostas - Feed Americano</b>\n\n"
+    mensagem += "Escolha as casas de apostas:\n\n"
+    mensagem += "💡 <b>Recomendadas para Player Props:</b>\n"
+    mensagem += "• DraftKings, FanDuel, BetMGM\n\n"
+    mensagem += "Clique para ativar/desativar:"
+    
+    await query.edit_message_text(
+        mensagem,
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+
 async def config_american_callback(update, context):
     """Menu de configurações para feed americano"""
     query = update.callback_query
@@ -549,7 +595,7 @@ async def config_american_callback(update, context):
     ev_pct = ev_min * 100
     
     keyboard = [
-        [InlineKeyboardButton("🏦 Casas de Apostas", callback_data="setup_bookmakers")],
+        [InlineKeyboardButton("🏦 Casas de Apostas", callback_data="setup_american_bookmakers")],
         [InlineKeyboardButton("📈 EV Mínimo", callback_data="ev_menu")],
         [InlineKeyboardButton(f"🎯 Player Props {'✅' if include_props else '❌'}", callback_data="toggle_props")],
         [InlineKeyboardButton("🏈 Esportes", callback_data="esportes_americanos")],
@@ -569,6 +615,29 @@ async def config_american_callback(update, context):
         reply_markup=reply_markup,
         parse_mode="HTML"
     )
+
+async def toggle_american_bookmaker_callback(update, context):
+    """Toggle de bookmaker para feed americano"""
+    query = update.callback_query
+    await query.answer()
+    
+    chat_id = str(query.message.chat_id)
+    bookmaker = query.data.split("|")[1]
+    db = get_db()
+    
+    # Pega bookmakers atuais
+    bookmakers_atuais = db.get_user_bookmakers(chat_id)
+    
+    if bookmaker in bookmakers_atuais:
+        bookmakers_atuais.remove(bookmaker)
+    else:
+        bookmakers_atuais.append(bookmaker)
+    
+    # Salva no banco
+    db.set_user_bookmakers(chat_id, bookmakers_atuais)
+    
+    # Volta para o menu de bookmakers
+    await setup_american_bookmakers_callback(update, context)
 
 async def toggle_props_callback(update, context):
     """Toggle de Player Props"""
@@ -2822,6 +2891,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "config_american":
         await config_american_callback(update, context)
+        return
+
+    elif data == "setup_american_bookmakers":
+        await setup_american_bookmakers_callback(update, context)
+        return
+
+    elif data.startswith("toggle_american_bookmaker|"):
+        await toggle_american_bookmaker_callback(update, context)
         return
 
     elif data == "esportes_americanos":
