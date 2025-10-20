@@ -278,3 +278,101 @@ def validar_filtros_usuario(evento, filtros_usuario, ligas_usuario, esportes_usu
     except Exception as e:
         print(f"Erro na validação de filtros do usuário: {e}")
         return False
+
+# ===== VALIDAÇÕES PARA FEED AMERICANO =====
+
+def is_american_sport(sport_slug: str) -> bool:
+    """
+    Verifica se um esporte é americano baseado no slug da API
+    """
+    american_sports = [
+        'americanfootball_nfl',
+        'americanfootball_ncaaf', 
+        'basketball_nba',
+        'basketball_wnba',
+        'baseball_mlb',
+        'baseball_milb',
+        'soccer_usa_mls',
+        'soccer_usa_usl'
+    ]
+    return sport_slug in american_sports
+
+def is_american_league(league_name: str) -> bool:
+    """
+    Verifica se uma liga é americana
+    """
+    if not league_name:
+        return False
+    
+    american_leagues = [
+        'NFL', 'NCAAF', 'NCAA Football', 'NBA', 'WNBA', 
+        'MLB', 'Minor League Baseball', 'MLS', 'USL Championship',
+        'USL League One', 'USL League Two', 'NWSL', 'NHL'
+    ]
+    
+    return any(american_league in league_name for american_league in american_leagues)
+
+def validar_esporte_americano(evento: Dict[str, Any], feed_id: str) -> bool:
+    """
+    Valida se um evento é de esporte americano (para feed_american)
+    """
+    if feed_id != 'feed_american':
+        return True  # Não aplica restrição para outros feeds
+    
+    sport_slug = evento.get('sport', '').lower()
+    league_name = evento.get('league', '')
+    
+    # Verifica se é esporte americano
+    if not is_american_sport(sport_slug):
+        return False
+    
+    # Verifica se é liga americana
+    if not is_american_league(league_name):
+        return False
+    
+    return True
+
+def validar_player_prop(evento: Dict[str, Any], filtros_usuario: Dict[str, Any], feed_id: str) -> bool:
+    """
+    Valida se um player prop deve ser enviado
+    
+    - Feed Americano: apenas props de esportes/ligas americanas
+    - Feeds Normais: props de qualquer esporte, mas respeitando filtros do usuário
+    """
+    # Verifica se é player prop
+    if not evento.get('is_player_prop', False):
+        return True  # Não é prop, não aplica validação
+    
+    # Verifica se usuário quer receber props
+    include_props = filtros_usuario.get('include_props', False)
+    
+    # Feed americano: props sempre ativos por padrão
+    if feed_id == 'feed_american':
+        include_props = True
+    
+    if not include_props:
+        return False
+    
+    # Feed americano: apenas esportes/ligas americanas
+    if feed_id == 'feed_american':
+        if not validar_esporte_americano(evento, feed_id):
+            return False
+    
+    # Props devem respeitar mesmos filtros de liga/esporte
+    # (isso já é feito em evento_valido())
+    
+    return True
+
+def validar_filtros_americanos(evento: Dict[str, Any], filtros_usuario: Dict[str, Any], feed_id: str) -> bool:
+    """
+    Valida filtros específicos para feed americano
+    """
+    # Aplica validação de esporte americano
+    if not validar_esporte_americano(evento, feed_id):
+        return False
+    
+    # Aplica validação de player props
+    if not validar_player_prop(evento, filtros_usuario, feed_id):
+        return False
+    
+    return True

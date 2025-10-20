@@ -536,6 +536,94 @@ async def setup_american_finalizar_callback(update, context):
     
     await query.edit_message_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
 
+async def esportes_americanos_callback(update, context):
+    """Menu para alternar entre esportes americanos"""
+    query = update.callback_query
+    await query.answer()
+    
+    chat_id = str(query.message.chat_id)
+    db = get_db()
+    
+    # Esportes americanos disponíveis
+    esportes_disponiveis = [
+        ("🏈 NFL", "americanfootball_nfl", "NFL"),
+        ("🏈 College Football", "americanfootball_ncaaf", "NCAAF"),
+        ("🏀 NBA", "basketball_nba", "NBA"),
+        ("🏀 WNBA", "basketball_wnba", "WNBA"),
+        ("⚾ MLB", "baseball_mlb", "MLB"),
+        ("⚾ Minor League", "baseball_milb", "Minor League Baseball"),
+        ("⚽ MLS", "soccer_usa_mls", "MLS"),
+        ("⚽ USL", "soccer_usa_usl", "USL Championship")
+    ]
+    
+    # Esportes atualmente ativos do usuário
+    esportes_ativos = db.get_user_sports(chat_id)
+    ligas_ativas = db.get_user_leagues(chat_id)
+    
+    keyboard = []
+    for emoji, sport_slug, league_name in esportes_disponiveis:
+        is_active = sport_slug in esportes_ativos
+        status = "✅" if is_active else "❌"
+        button_text = f"{status} {emoji} {league_name}"
+        callback_data = f"toggle_american_sport|{sport_slug}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Voltar", callback_data="config_american")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    mensagem = "🇺🇸 <b>Esportes Americanos</b>\n\n"
+    mensagem += "Escolha quais esportes quer receber alertas:\n\n"
+    mensagem += "💡 <i>Player Props são mais comuns em NFL, NBA e MLB</i>"
+    
+    await query.edit_message_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
+
+async def toggle_american_sport_callback(update, context):
+    """Toggle de esporte americano"""
+    query = update.callback_query
+    await query.answer()
+    
+    chat_id = str(query.message.chat_id)
+    sport_slug = query.data.split("|")[1]
+    
+    db = get_db()
+    esportes_ativos = db.get_user_sports(chat_id)
+    
+    if sport_slug in esportes_ativos:
+        # Remove esporte
+        db.remove_user_sport(chat_id, sport_slug)
+        action = "removido"
+    else:
+        # Adiciona esporte
+        db.add_user_sport(chat_id, sport_slug)
+        action = "adicionado"
+    
+    # Mapeia esporte para liga correspondente
+    sport_to_league = {
+        'americanfootball_nfl': 'NFL',
+        'americanfootball_ncaaf': 'NCAAF',
+        'basketball_nba': 'NBA',
+        'basketball_wnba': 'WNBA',
+        'baseball_mlb': 'MLB',
+        'baseball_milb': 'Minor League Baseball',
+        'soccer_usa_mls': 'MLS',
+        'soccer_usa_usl': 'USL Championship'
+    }
+    
+    league_name = sport_to_league.get(sport_slug, sport_slug)
+    
+    # Toggle da liga também
+    ligas_ativas = db.get_user_leagues(chat_id)
+    if league_name in ligas_ativas:
+        db.remove_user_league(chat_id, league_name)
+    else:
+        db.add_user_league(chat_id, league_name)
+    
+    await query.answer(f"✅ {league_name} {action}!")
+    
+    # Atualiza o menu
+    await esportes_americanos_callback(update, context)
+
 async def start_usuario_configurado(update, context, filtros_usuario):
     """Menu para usuário que já tem configuração completa"""
     
@@ -2669,6 +2757,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
         await setup_american_finalizar_callback(update, context)
+        return
+
+    elif data == "esportes_americanos":
+        await esportes_americanos_callback(update, context)
+        return
+
+    elif data.startswith("toggle_american_sport|"):
+        await toggle_american_sport_callback(update, context)
         return
 
     elif data == "start_inicial":

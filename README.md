@@ -7,9 +7,11 @@ Sistema de alertas de apostas esportivas com valor positivo (EV+) usando SQLite 
 - **Scheduler fixo**: Scan a cada 2 minutos
 - **API Odds**: Integração com odds-api.io
 - **Multi-feed**: Suporte a múltiplos feeds isolados
+- **Feed Americano**: Feed dedicado aos esportes dos EUA com Player Props
 - **SQLite**: Banco de dados robusto e escalável
-- **Setup wizard**: Configuração em 4 passos
+- **Setup wizard**: Configuração em 4 passos (3 para feed americano)
 - **Filtros avançados**: EV, horários, ligas, esportes
+- **Player Props**: Apostas em jogadores específicos (NFL, NBA, MLB, MLS)
 - **Cache inteligente**: Evita duplicatas
 - **Histórico completo**: Todos os alertas salvos
 
@@ -111,6 +113,61 @@ python bot_listener.py
 
 # Scheduler
 python main_scheduler.py
+```
+
+## 🇺🇸 Feed Americano
+
+Feed dedicado exclusivamente aos esportes americanos com suporte a Player Props.
+
+### Características do Feed Americano
+
+- **Esportes**: NFL, College Football, NBA, WNBA, MLB, MLS
+- **Player Props**: Apostas em jogadores específicos (pontos, jardas, touchdowns, etc)
+- **Setup Simplificado**: Apenas 3 passos de configuração
+- **Isolamento**: Recebe apenas esportes/ligas americanas
+- **Props Ativados**: Player Props ativados por padrão
+
+### Iniciar Feed Americano
+
+#### Windows
+```powershell
+# Configure o token primeiro
+$env:BOT_TOKEN_FEED_AMERICAN = "seu_token_aqui"
+
+# Execute o script
+.\start_feed_american.ps1
+```
+
+#### Linux/Mac
+```bash
+# Configure o token primeiro
+export BOT_TOKEN_FEED_AMERICAN="seu_token_aqui"
+
+# Execute o script
+./start_feed_american.sh
+```
+
+### Setup do Feed Americano
+
+1. **Bookmakers**: Escolha as casas de apostas (DraftKings, FanDuel, BetMGM recomendados para props)
+2. **EV Mínimo**: Configure o valor esperado mínimo (3%, 5%, 8%, 12% ou personalizado)
+3. **Player Props**: Ative/desative apostas em jogadores específicos
+
+### Player Props Suportados
+
+- **NFL**: Passing Yards, Rushing Yards, Touchdowns, Receptions
+- **NBA**: Points, Rebounds, Assists, Steals, Blocks
+- **MLB**: Strikeouts, Home Runs, Hits, RBIs
+- **MLS**: Goals, Assists, Shots, Shots on Target
+
+### Exemplo de Alerta de Player Prop
+
+```
+🎯 EV+ 8.5% | PLAYER PROP
+🏀 NBA - Lakers vs Celtics
+👤 LeBron James - Points Over 27.5
+💰 Odd: 1.90 | Stake: 1.0u
+🏦 DraftKings
 ```
 
 ## 📱 Comandos do Bot
