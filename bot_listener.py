@@ -394,7 +394,11 @@ async def start_usuario_configurado_americano(update, context, filtros_usuario):
     mensagem += f"🎯 <b>Player Props:</b> {'Ativado' if include_props else 'Desativado'}\n\n"
     mensagem += f"Escolha uma opção:"
     
-    await update.message.reply_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
+    # Verifica se é callback ou mensagem
+    if hasattr(update, 'callback_query') and update.callback_query:
+        await update.callback_query.edit_message_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
+    else:
+        await update.message.reply_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
 
 async def start_usuario_novo_americano(update, context):
     """Setup simplificado para usuário novo no feed americano (3 passos)"""
