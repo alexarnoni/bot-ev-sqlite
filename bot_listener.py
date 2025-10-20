@@ -504,18 +504,15 @@ async def setup_american_finalizar_callback(update, context):
     bookmakers_existentes = db.get_user_bookmakers(chat_id)
     if not bookmakers_existentes:
         bookmakers_padrao = ['Bet365', 'BetMGM', 'DraftKings', 'FanDuel']
-        for bookmaker in bookmakers_padrao:
-            db.add_user_bookmaker(chat_id, bookmaker)
+        db.set_user_bookmakers(chat_id, bookmakers_padrao)
     
     # Adiciona esportes americanos
     esportes_americanos = ['americanfootball_nfl', 'basketball_nba', 'baseball_mlb', 'soccer_usa_mls']
-    for esporte in esportes_americanos:
-        db.add_user_sport(chat_id, esporte)
+    db.set_user_sports(chat_id, esportes_americanos)
     
     # Adiciona ligas americanas
     ligas_americanas = ['NFL', 'NBA', 'MLB', 'MLS']
-    for liga in ligas_americanas:
-        db.add_user_league(chat_id, liga)
+    db.set_user_leagues(chat_id, ligas_americanas)
     
     keyboard = [
         [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual")],

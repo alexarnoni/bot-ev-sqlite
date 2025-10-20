@@ -341,7 +341,7 @@ class Database:
                         (chat_id, league)
                     )
     
-    def get_user_leagues(self, chat_id: int) -> List[List[str]]:
+    def get_user_leagues(self, chat_id: int) -> List[str]:
         """Retorna ligas de um usuário. Sempre retorna lista (possivelmente vazia)."""
         with self.get_connection() as conn:
             rows = conn.execute(
