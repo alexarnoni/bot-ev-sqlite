@@ -319,7 +319,7 @@ def is_american_league(league_name: str) -> bool:
 def validar_esporte_americano(evento: Dict[str, Any], feed_id: str) -> bool:
     """
     Valida se um evento é de esporte americano (para feed_american)
-    REGRA SIMPLIFICADA: Aceita se o SPORT for americano, independente da liga
+    🧪 TESTE: ACEITANDO TODOS OS EVENTOS TEMPORARIAMENTE
     """
     if feed_id != 'feed_american':
         return True  # Não aplica restrição para outros feeds
@@ -331,15 +331,9 @@ def validar_esporte_americano(evento: Dict[str, Any], feed_id: str) -> bool:
     import logging
     logger = logging.getLogger(__name__)
     
-    # SIMPLIFICADO: Verifica APENAS se é esporte americano
-    # Não valida liga para evitar rejeitar eventos por formato de nome diferente
-    if not is_american_sport(sport_slug):
-        logger.info(f"❌ Evento rejeitado - Sport não americano: {sport_slug} | Liga: {league_name}")
-        return False
-    
-    # Aceita o evento se o sport for americano
-    logger.info(f"✅ Evento aceito - Sport: {sport_slug} | Liga: {league_name}")
-    return True
+    # 🧪 TESTE TEMPORÁRIO: ACEITAR TUDO
+    logger.info(f"🧪 TESTE: Sport={sport_slug} | Liga={league_name} | Aceitando TODOS os eventos temporariamente")
+    return True  # <-- ACEITA TUDO PARA DIAGNÓSTICO
 
 def validar_player_prop(evento: Dict[str, Any], filtros_usuario: Dict[str, Any], feed_id: str) -> bool:
     """
