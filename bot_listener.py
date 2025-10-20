@@ -382,7 +382,6 @@ async def start_usuario_configurado_americano(update, context, filtros_usuario):
     keyboard = [
         [InlineKeyboardButton("📊 Fazer Scan", callback_data="scan_manual")],
         [InlineKeyboardButton("⚙️ Configurações", callback_data="config_american")],
-        [InlineKeyboardButton("📈 Estatísticas", callback_data="stats")],
         [InlineKeyboardButton("🏈 Esportes", callback_data="esportes_americanos")]
     ]
     
@@ -532,6 +531,65 @@ async def setup_american_finalizar_callback(update, context):
     mensagem += "Bot ativo e monitorando oportunidades!"
     
     await query.edit_message_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
+
+async def config_american_callback(update, context):
+    """Menu de configurações para feed americano"""
+    query = update.callback_query
+    await query.answer()
+    
+    chat_id = str(query.message.chat_id)
+    db = get_db()
+    
+    # Coleta informações atuais
+    bookmakers = db.get_user_bookmakers(chat_id)
+    ev_min = db.get_user_filter(chat_id).get('ev_faixa_min', 0.05)
+    include_props = db.get_user_filter(chat_id).get('include_props', True)
+    
+    # Formata EV
+    ev_pct = ev_min * 100
+    
+    keyboard = [
+        [InlineKeyboardButton("🏦 Casas de Apostas", callback_data="setup_bookmakers")],
+        [InlineKeyboardButton("📈 EV Mínimo", callback_data="ev_menu")],
+        [InlineKeyboardButton(f"🎯 Player Props {'✅' if include_props else '❌'}", callback_data="toggle_props")],
+        [InlineKeyboardButton("🏈 Esportes", callback_data="esportes_americanos")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="start_inicial")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    mensagem = "⚙️ <b>Configurações do Feed Americano</b>\n\n"
+    mensagem += f"🏦 <b>Casas:</b> {', '.join(bookmakers[:3])}{'...' if len(bookmakers) > 3 else ''}\n"
+    mensagem += f"📈 <b>EV Mínimo:</b> {ev_pct:.1f}%\n"
+    mensagem += f"🎯 <b>Player Props:</b> {'Ativados' if include_props else 'Desativados'}\n\n"
+    mensagem += "Escolha o que deseja configurar:"
+    
+    await query.edit_message_text(
+        mensagem,
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+
+async def toggle_props_callback(update, context):
+    """Toggle de Player Props"""
+    query = update.callback_query
+    await query.answer()
+    
+    chat_id = str(query.message.chat_id)
+    db = get_db()
+    
+    # Pega estado atual
+    current_filter = db.get_user_filter(chat_id)
+    include_props = current_filter.get('include_props', True)
+    
+    # Inverte o estado
+    new_include_props = not include_props
+    
+    # Salva no banco
+    db.set_user_filter(chat_id, include_props=new_include_props)
+    
+    # Volta para o menu de configurações
+    await config_american_callback(update, context)
 
 async def esportes_americanos_callback(update, context):
     """Menu para alternar entre esportes americanos"""
@@ -2762,12 +2820,20 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await setup_american_finalizar_callback(update, context)
         return
 
+    elif data == "config_american":
+        await config_american_callback(update, context)
+        return
+
     elif data == "esportes_americanos":
         await esportes_americanos_callback(update, context)
         return
 
     elif data.startswith("toggle_american_sport|"):
         await toggle_american_sport_callback(update, context)
+        return
+
+    elif data == "toggle_props":
+        await toggle_props_callback(update, context)
         return
 
     elif data == "start_inicial":
