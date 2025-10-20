@@ -284,33 +284,37 @@ def validar_filtros_usuario(evento, filtros_usuario, ligas_usuario, esportes_usu
 def is_american_sport(sport_slug: str) -> bool:
     """
     Verifica se um esporte é americano baseado no slug da API
+    Slugs corretos da API odds-api.io
     """
     american_sports = [
-        'americanfootball_nfl',
-        'americanfootball_ncaaf', 
-        'basketball_nba',
-        'basketball_wnba',
-        'baseball_mlb',
-        'baseball_milb',
-        'soccer_usa_mls',
-        'soccer_usa_usl'
+        'american-football',  # NFL, NCAAF
+        'basketball',         # NBA, WNBA, NCAA
+        'baseball',           # MLB
+        'ice-hockey',         # NHL, AHL, ECHL
+        'football'            # MLS, USL (soccer nos EUA)
     ]
     return sport_slug in american_sports
 
 def is_american_league(league_name: str) -> bool:
     """
     Verifica se uma liga é americana
+    Baseado nos league slugs reais da API odds-api.io
     """
     if not league_name:
         return False
     
-    american_leagues = [
-        'NFL', 'NCAAF', 'NCAA Football', 'NBA', 'WNBA', 
-        'MLB', 'Minor League Baseball', 'MLS', 'USL Championship',
-        'USL League One', 'USL League Two', 'NWSL', 'NHL'
+    # Slugs de ligas americanas da API
+    american_league_slugs = [
+        'usa-nfl', 'usa-ncaa-regular-season',  # Football
+        'usa-nba', 'usa-wnba', 'usa-ncaa-regular-season', 'usa-ncaa-women',  # Basketball
+        'usa-mlb',  # Baseball
+        'usa-nhl', 'usa-ahl', 'usa-echl',  # Ice Hockey
+        'usa-mls', 'usa-usl-championship', 'usa-usl-league-one', 'usa-national-womens-soccer-league'  # Soccer
     ]
     
-    return any(american_league in league_name for american_league in american_leagues)
+    # Converte league_name para lowercase e verifica
+    league_lower = league_name.lower()
+    return any(american_slug in league_lower for american_slug in american_league_slugs)
 
 def validar_esporte_americano(evento: Dict[str, Any], feed_id: str) -> bool:
     """

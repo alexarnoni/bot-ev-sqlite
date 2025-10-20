@@ -3,35 +3,56 @@ Configuração específica para esportes americanos
 """
 from typing import List, Dict, Set
 
-# Esportes americanos suportados (identificadores da API)
+# Esportes americanos suportados (identificadores CORRETOS da API odds-api.io)
 AMERICAN_SPORTS = {
-    'NFL': 'americanfootball_nfl',
-    'College Football': 'americanfootball_ncaaf', 
-    'NBA': 'basketball_nba',
-    'WNBA': 'basketball_wnba',
-    'MLB': 'baseball_mlb',
-    'Minor League Baseball': 'baseball_milb',
-    'MLS': 'soccer_usa_mls',
-    'USL Championship': 'soccer_usa_usl'
+    'NFL': 'american-football',
+    'College Football': 'american-football', 
+    'NBA': 'basketball',
+    'WNBA': 'basketball',
+    'NCAA Basketball': 'basketball',
+    'MLB': 'baseball',
+    'NHL': 'ice-hockey',
+    'AHL': 'ice-hockey',
+    'MLS': 'football',  # Soccer nos EUA
+    'USL Championship': 'football'
 }
 
-# Ligas americanas principais
+# Ligas americanas principais (baseado em league slugs da API odds-api.io)
 AMERICAN_LEAGUES = [
-    'NFL',
-    'NCAAF', 
-    'NCAA Football',
-    'NBA',
-    'WNBA',
-    'MLB',
-    'Minor League Baseball',
-    'MLS',
-    'USL Championship',
-    'USL League One',
-    'USL League Two',
-    'NWSL',  # National Women's Soccer League
-    'NHL',   # Hockey também é popular nos EUA
-    'NHL AHL',  # American Hockey League
-    'NHL ECHL'  # ECHL
+    # American Football
+    'USA - NFL',
+    'USA - NCAA, Regular Season',
+    'usa-nfl',
+    'usa-ncaa-regular-season',
+    
+    # Basketball
+    'USA - NBA',
+    'USA - WNBA', 
+    'USA - NCAA, Regular Season',
+    'USA - NCAA Women',
+    'usa-nba',
+    'usa-wnba',
+    
+    # Baseball
+    'USA - MLB',
+    'usa-mlb',
+    
+    # Ice Hockey
+    'USA - NHL',
+    'USA - AHL',
+    'USA - ECHL',
+    'usa-nhl',
+    'usa-ahl',
+    'usa-echl',
+    
+    # Soccer (Football)
+    'USA - MLS',
+    'USA - USL Championship',
+    'USA - USL League One',
+    'USA - National Womens Soccer League',
+    'usa-mls',
+    'usa-usl-championship',
+    'usa-usl-league-one'
 ]
 
 # Player Props principais por esporte
