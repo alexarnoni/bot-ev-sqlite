@@ -389,11 +389,17 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
         # Remove duplicatas do cache (MESMA LÓGICA)
         cache = get_cache()
         eventos_novos = []
+        duplicatas = 0
         for evento in eventos_validos:
             if not cache.is_duplicate(chat_id, evento):
                 eventos_novos.append(evento)
+            else:
+                duplicatas += 1
+        
+        logger.info(f"🔄 Cache: {duplicatas} duplicatas removidas, {len(eventos_novos)} eventos novos")
         
         if not eventos_novos:
+            logger.info(f"⚠️ Todos os {len(eventos_validos)} eventos já foram enviados anteriormente (cache)")
             return []
         
         # Calcula stake e separa alertas por prioridade
