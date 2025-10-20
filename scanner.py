@@ -303,10 +303,21 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
         
         # Filtra eventos válidos (MESMA LÓGICA DO SCAN AUTOMÁTICO)
         eventos_validos = []
+        total_processados = 0
+        rejeitados_liga = 0
+        rejeitados_data = 0
+        rejeitados_evento_valido = 0
+        rejeitados_filtros_usuario = 0
+        rejeitados_americanos = 0
+        rejeitados_dinamicos = 0
+        
         for aposta in apostas:
+            total_processados += 1
+            
             # Ignora eventos com liga desconhecida
             league_name = (aposta.get('league') or '').strip()
             if not league_name or league_name.lower() == 'unknown':
+                rejeitados_liga += 1
                 continue
             
             # Ignora eventos já iniciados
@@ -318,12 +329,20 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
                         jogo_time = jogo_time.replace(tzinfo=timezone.utc)
                     agora = momento_scan if momento_scan else datetime.now(timezone.utc)
                     if jogo_time <= agora:
+                        rejeitados_data += 1
                         continue
             except Exception:
                 pass
             
+            # 🔍 LOG: Evento chegou até aqui
+            if total_processados <= 3:  # Log apenas primeiros 3 para não poluir
+                logger.info(f"🔍 Evento #{total_processados}: Sport={aposta.get('sport')} | Liga={league_name} | EV={aposta.get('ev', 0):.2%} | Bookmaker={aposta.get('bookmaker')}")
+            
             # Aplica filtros do usuário incluindo bookmakers (MESMA LÓGICA)
             if not evento_valido(aposta, filtros):
+                rejeitados_evento_valido += 1
+                if total_processados <= 3:
+                    logger.info(f"❌ #{total_processados} Rejeitado em evento_valido()")
                 continue
             
             # Verifica filtros específicos do usuário (bookmakers, ligas, esportes)
@@ -332,17 +351,37 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
             bookmakers_usuario = usuario.get('bookmakers', [])
             
             if not validar_filtros_usuario(aposta, filtros, ligas_usuario, esportes_usuario, bookmakers_usuario):
+                rejeitados_filtros_usuario += 1
+                if total_processados <= 3:
+                    logger.info(f"❌ #{total_processados} Rejeitado em validar_filtros_usuario()")
                 continue
             
             # Aplica filtros específicos do feed americano
             if not validar_filtros_americanos(aposta, filtros, FEED_ID):
+                rejeitados_americanos += 1
+                if total_processados <= 3:
+                    logger.info(f"❌ #{total_processados} Rejeitado em validar_filtros_americanos()")
                 continue
             
             # Aplica filtros dinâmicos (MESMA LÓGICA)
             if not aplicar_filtros_dinamicos(aposta, filtros, janela_tempo):
+                rejeitados_dinamicos += 1
+                if total_processados <= 3:
+                    logger.info(f"❌ #{total_processados} Rejeitado em aplicar_filtros_dinamicos()")
                 continue
             
             eventos_validos.append(aposta)
+        
+        # 📊 RESUMO DO SCAN
+        logger.info(f"📊 RESUMO DO SCAN para usuário {chat_id}:")
+        logger.info(f"   Total de eventos da API: {total_processados}")
+        logger.info(f"   ❌ Rejeitados (liga unknown): {rejeitados_liga}")
+        logger.info(f"   ❌ Rejeitados (data/horário): {rejeitados_data}")
+        logger.info(f"   ❌ Rejeitados (evento_valido): {rejeitados_evento_valido}")
+        logger.info(f"   ❌ Rejeitados (filtros_usuario): {rejeitados_filtros_usuario}")
+        logger.info(f"   ❌ Rejeitados (filtros_americanos): {rejeitados_americanos}")
+        logger.info(f"   ❌ Rejeitados (filtros_dinamicos): {rejeitados_dinamicos}")
+        logger.info(f"   ✅ Eventos aceitos: {len(eventos_validos)}")
         
         if not eventos_validos:
             return []
