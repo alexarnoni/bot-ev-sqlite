@@ -13,6 +13,7 @@ from bookmaker_config import usuario_configurado
 from config import (
     get_listener_log_path,
     get_telegram_token,
+    FEED_ID,
 )
 from database import get_db
 # from filtros import validar_filtros  # REMOVIDO - agora usa SQLite diretamente
@@ -343,12 +344,197 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if info_atualizada:
         salvar_filtros()
     
+    # ===== FEED AMERICANO - SETUP SIMPLIFICADO =====
+    if FEED_ID == 'feed_american':
+        return await start_feed_americano(update, context, filtros_usuario)
+    
     # ===== USUÁRIO JÁ CONFIGURADO =====
     if usuario_configurado(int(chat_id)):
         return await start_usuario_configurado(update, context, filtros_usuario)
     
     # ===== USUÁRIO NOVO - SETUP OBRIGATÓRIO =====
     return await start_usuario_novo(update, context)
+
+async def start_feed_americano(update, context, filtros_usuario):
+    """Setup simplificado para feed americano (3 passos)"""
+    chat_id = str(update.effective_chat.id)
+    
+    # ===== USUÁRIO JÁ CONFIGURADO =====
+    if usuario_configurado(int(chat_id)):
+        return await start_usuario_configurado_americano(update, context, filtros_usuario)
+    
+    # ===== USUÁRIO NOVO - SETUP SIMPLIFICADO =====
+    return await start_usuario_novo_americano(update, context)
+
+async def start_usuario_configurado_americano(update, context, filtros_usuario):
+    """Menu para usuário configurado no feed americano"""
+    chat_id = str(update.effective_chat.id)
+    
+    # Coleta informações da configuração atual
+    bookmakers = filtros_usuario.get("bookmakers", [])
+    ev_min = filtros_usuario.get("ev_faixa_min", 0.05)
+    include_props = filtros_usuario.get("include_props", True)  # Default True para feed americano
+    
+    # Formata EV
+    ev_pct = ev_min * 100
+    
+    # Menu principal do feed americano
+    keyboard = [
+        [InlineKeyboardButton("📊 Fazer Scan", callback_data="scan_manual")],
+        [InlineKeyboardButton("⚙️ Configurações", callback_data="config_american")],
+        [InlineKeyboardButton("📈 Estatísticas", callback_data="stats")],
+        [InlineKeyboardButton("🏈 Esportes", callback_data="esportes_americanos")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Mensagem de boas-vindas específica do feed americano
+    mensagem = f"🇺🇸 <b>American Sports Feed</b>\n\n"
+    mensagem += f"📚 <b>Bookmakers:</b> {', '.join(bookmakers) if bookmakers else 'Nenhum'}\n"
+    mensagem += f"💰 <b>EV Mínimo:</b> {ev_pct:.1f}%\n"
+    mensagem += f"🎯 <b>Player Props:</b> {'Ativado' if include_props else 'Desativado'}\n\n"
+    mensagem += f"Escolha uma opção:"
+    
+    await update.message.reply_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
+
+async def start_usuario_novo_americano(update, context):
+    """Setup simplificado para usuário novo no feed americano (3 passos)"""
+    
+    keyboard = [
+        [InlineKeyboardButton("🚀 Começar Setup", callback_data="setup_american_passo1")],
+        [InlineKeyboardButton("ℹ️ Sobre o Feed", callback_data="info_american")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    mensagem = "🇺🇸 <b>Bem-vindo ao American Sports Feed!</b>\n\n"
+    mensagem += "Este feed é dedicado aos esportes americanos:\n"
+    mensagem += "🏈 NFL / College Football\n"
+    mensagem += "🏀 NBA / WNBA\n"
+    mensagem += "⚾ MLB / Ligas Menores\n"
+    mensagem += "⚽ MLS / USL\n\n"
+    mensagem += "Setup simplificado em apenas 3 passos:\n"
+    mensagem += "1️⃣ Escolher bookmakers\n"
+    mensagem += "2️⃣ Configurar EV mínimo\n"
+    mensagem += "3️⃣ Ativar Player Props\n\n"
+    mensagem += "Player Props são apostas em jogadores específicos (pontos, jardas, touchdowns, etc) - muito populares nos EUA!"
+    
+    await update.message.reply_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
+
+# ===== CALLBACKS DO SETUP AMERICANO =====
+
+async def setup_american_passo1_callback(update, context):
+    """Passo 1: Escolher bookmakers (setup americano)"""
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("📚 Escolher Bookmakers", callback_data="setup_american_bookmakers")],
+        [InlineKeyboardButton("⏭️ Pular (usar padrão)", callback_data="setup_american_passo2")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    mensagem = "🇺🇸 <b>Passo 1/3: Bookmakers</b>\n\n"
+    mensagem += "Escolha as casas de apostas que você usa:\n\n"
+    mensagem += "💡 <i>Dica: Player Props são mais comuns em DraftKings, FanDuel, BetMGM</i>"
+    
+    await query.edit_message_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
+
+async def setup_american_passo2_callback(update, context):
+    """Passo 2: Configurar EV mínimo (setup americano)"""
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("💰 EV 3%", callback_data="setup_american_ev|0.03")],
+        [InlineKeyboardButton("💰 EV 5%", callback_data="setup_american_ev|0.05")],
+        [InlineKeyboardButton("💰 EV 8%", callback_data="setup_american_ev|0.08")],
+        [InlineKeyboardButton("💰 EV 12%", callback_data="setup_american_ev|0.12")],
+        [InlineKeyboardButton("✏️ Personalizado", callback_data="setup_american_ev_custom")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    mensagem = "🇺🇸 <b>Passo 2/3: EV Mínimo</b>\n\n"
+    mensagem += "Escolha o valor esperado mínimo:\n\n"
+    mensagem += "💡 <i>Player Props podem ter EV mais baixo que mercados normais</i>"
+    
+    await query.edit_message_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
+
+async def setup_american_passo3_callback(update, context):
+    """Passo 3: Ativar Player Props (setup americano)"""
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("🎯 Sim, Ativar Props", callback_data="setup_american_props|1")],
+        [InlineKeyboardButton("❌ Não, Apenas Mercados Normais", callback_data="setup_american_props|0")],
+        [InlineKeyboardButton("ℹ️ O que são Player Props?", callback_data="info_props")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    mensagem = "🇺🇸 <b>Passo 3/3: Player Props</b>\n\n"
+    mensagem += "Player Props são apostas em jogadores específicos:\n"
+    mensagem += "🏈 LeBron James - Points Over 27.5\n"
+    mensagem += "🏈 Mahomes - Passing Yards Over 300\n"
+    mensagem += "⚾ Judge - Home Runs Over 1.5\n\n"
+    mensagem += "Muito populares nos EUA! Quer receber?"
+    
+    await query.edit_message_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
+
+async def setup_american_finalizar_callback(update, context):
+    """Finaliza setup americano"""
+    query = update.callback_query
+    await query.answer()
+    
+    chat_id = str(update.effective_chat.id)
+    
+    # Salva configuração no banco
+    db = get_db()
+    
+    # Configurações padrão para feed americano
+    db.set_user_filter(chat_id, 
+        ev_faixa_min=0.05,  # 5% padrão
+        include_props=True   # Props ativados por padrão
+    )
+    
+    # Adiciona bookmakers padrão se não tiver nenhum
+    bookmakers_existentes = db.get_user_bookmakers(chat_id)
+    if not bookmakers_existentes:
+        bookmakers_padrao = ['Bet365', 'BetMGM', 'DraftKings', 'FanDuel']
+        for bookmaker in bookmakers_padrao:
+            db.add_user_bookmaker(chat_id, bookmaker)
+    
+    # Adiciona esportes americanos
+    esportes_americanos = ['americanfootball_nfl', 'basketball_nba', 'baseball_mlb', 'soccer_usa_mls']
+    for esporte in esportes_americanos:
+        db.add_user_sport(chat_id, esporte)
+    
+    # Adiciona ligas americanas
+    ligas_americanas = ['NFL', 'NBA', 'MLB', 'MLS']
+    for liga in ligas_americanas:
+        db.add_user_league(chat_id, liga)
+    
+    keyboard = [
+        [InlineKeyboardButton("🎯 Fazer Primeiro Scan", callback_data="scan_manual")],
+        [InlineKeyboardButton("⚙️ Configurações", callback_data="config_american")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    mensagem = "🎉 <b>Setup Americano Concluído!</b>\n\n"
+    mensagem += "✅ <b>Feed configurado para esportes americanos:</b>\n"
+    mensagem += "🏈 NFL / College Football\n"
+    mensagem += "🏀 NBA / WNBA\n"
+    mensagem += "⚾ MLB / Ligas Menores\n"
+    mensagem += "⚽ MLS / USL\n\n"
+    mensagem += "🎯 <b>Player Props ativados!</b>\n"
+    mensagem += "💰 <b>EV Mínimo:</b> 5%\n\n"
+    mensagem += "Bot ativo e monitorando oportunidades!"
+    
+    await query.edit_message_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
 
 async def start_usuario_configurado(update, context, filtros_usuario):
     """Menu para usuário que já tem configuração completa"""
@@ -2440,6 +2626,49 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "scan_manual_inline":
         await scan_manual_inline_callback(update, context)
+        return
+
+    # ===== CALLBACKS DO SETUP AMERICANO =====
+    elif data == "setup_american_passo1":
+        await setup_american_passo1_callback(update, context)
+        return
+
+    elif data == "setup_american_passo2":
+        await setup_american_passo2_callback(update, context)
+        return
+
+    elif data == "setup_american_passo3":
+        await setup_american_passo3_callback(update, context)
+        return
+
+    elif data == "setup_american_finalizar":
+        await setup_american_finalizar_callback(update, context)
+        return
+
+    elif data.startswith("setup_american_ev|"):
+        ev_value = float(data.split("|")[1])
+        chat_id = str(query.message.chat_id)
+        db = get_db()
+        db.set_user_filter(chat_id, ev_faixa_min=ev_value)
+        await query.edit_message_text(
+            f"✅ EV mínimo definido para {ev_value*100:.0f}%\n\n"
+            "Prosseguindo para o próximo passo...",
+            parse_mode="HTML"
+        )
+        await setup_american_passo3_callback(update, context)
+        return
+
+    elif data.startswith("setup_american_props|"):
+        include_props = data.split("|")[1] == "1"
+        chat_id = str(query.message.chat_id)
+        db = get_db()
+        db.set_user_filter(chat_id, include_props=include_props)
+        await query.edit_message_text(
+            f"✅ Player Props {'ativados' if include_props else 'desativados'}\n\n"
+            "Finalizando configuração...",
+            parse_mode="HTML"
+        )
+        await setup_american_finalizar_callback(update, context)
         return
 
     elif data == "start_inicial":
