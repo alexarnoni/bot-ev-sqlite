@@ -300,6 +300,8 @@ def processar_props_com_ev(props: List[Dict], ev_min: float) -> List[Dict]:
     from bot_core import calcular_ev_player_prop
     
     props_validos = []
+    props_com_ev_calculado = 0
+    props_rejeitados_por_ev = 0
     
     for prop in props:
         try:
@@ -307,12 +309,19 @@ def processar_props_com_ev(props: List[Dict], ev_min: float) -> List[Dict]:
             ev_data = calcular_ev_player_prop(prop)
             
             if not ev_data:
+                logger.info(f"⚠️ Prop sem EV calculado: {prop.get('player_name')} - {prop.get('prop_type')}")
                 continue
             
             # Encontrar melhor casa (maior EV positivo)
             melhor_casa = max(ev_data.items(), key=lambda x: x[1]['best_ev'])
             bookmaker_name = melhor_casa[0]
             ev_info = melhor_casa[1]
+            
+            props_com_ev_calculado += 1
+            
+            # 🔍 DEBUG: Mostrar EVs calculados (primeiros 10 props)
+            if props_com_ev_calculado <= 10:
+                logger.info(f"📊 Prop: {prop.get('player_name')} - {prop.get('prop_type')} | EV: {ev_info['best_ev']:.4f} ({ev_info['best']}) | Min: {ev_min}")
             
             # Filtrar por EV mínimo
             if ev_info['best_ev'] >= ev_min:
@@ -330,10 +339,17 @@ def processar_props_com_ev(props: List[Dict], ev_min: float) -> List[Dict]:
                 prop['bet_side'] = f"{prop['player_name']} - {prop_type_display} {side_display} {prop['line']}"
                 
                 props_validos.append(prop)
+            else:
+                props_rejeitados_por_ev += 1
         
         except Exception as e:
             logger.error(f"Erro ao processar prop: {e}")
+            import traceback
+            traceback.print_exc()
             continue
+    
+    # 🔍 DEBUG: Resumo
+    logger.info(f"📊 Props processados: {props_com_ev_calculado}/{len(props)} | Rejeitados por EV < {ev_min}: {props_rejeitados_por_ev} | Válidos: {len(props_validos)}")
     
     return props_validos
 

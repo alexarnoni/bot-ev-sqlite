@@ -54,6 +54,10 @@ def definir_stake(ev, odd):
 def calcular_ev_player_prop(prop_data: dict) -> dict:
     """
     Calcula EV para player props comparando odds entre casas
+    SEGUINDO A LÓGICA DA DOCUMENTAÇÃO DA API
+    
+    Para cada casa, compara sua odd com a SEGUNDA MELHOR odd do mercado.
+    Se a odd for significativamente maior, há EV+.
     
     Args:
         prop_data: Dicionário com estrutura:
@@ -76,31 +80,52 @@ def calcular_ev_player_prop(prop_data: dict) -> dict:
     try:
         bookmaker_odds = prop_data.get('bookmaker_odds', {})
         
-        if not bookmaker_odds:
-            return {}
+        if not bookmaker_odds or len(bookmaker_odds) < 2:
+            return {}  # Precisa de pelo menos 2 casas para comparar
         
-        # Coletar todas as odds (over e under) para calcular "fair odds"
-        all_over_odds = []
-        all_under_odds = []
+        # Coletar todas as odds por bookmaker
+        all_overs = []  # [(bookmaker, odd), ...]
+        all_unders = []
         
         for bookmaker, odds in bookmaker_odds.items():
             over = odds.get('over')
             under = odds.get('under')
             
             if over and over > 1.0:
-                all_over_odds.append(over)
+                all_overs.append((bookmaker, over))
             if under and under > 1.0:
-                all_under_odds.append(under)
+                all_unders.append((bookmaker, under))
         
-        if not all_over_odds or not all_under_odds:
+        if not all_overs or not all_unders:
             return {}
         
-        # Usar a menor odd como "fair odds" (similar ao Pinnacle)
-        # Odds mais baixas geralmente indicam maior probabilidade verdadeira
-        fair_over = min(all_over_odds)
-        fair_under = min(all_under_odds)
+        # Ordenar por odd (maior primeiro)
+        all_overs.sort(key=lambda x: x[1], reverse=True)
+        all_unders.sort(key=lambda x: x[1], reverse=True)
         
-        # Calcular EV para cada casa
+        # ESTRATÉGIA: Comparar com a SEGUNDA MELHOR odd (ou média se houver muitas casas)
+        # Isso simula o "fair value" do mercado sem a melhor odd
+        
+        def get_fair_odd(sorted_odds):
+            """Pega a segunda melhor odd, ou média das demais se houver 3+ casas"""
+            if len(sorted_odds) < 2:
+                return None
+            
+            # Se tiver 2 casas: usar a segunda (pior)
+            if len(sorted_odds) == 2:
+                return sorted_odds[1][1]  # Segunda odd
+            
+            # Se tiver 3+ casas: usar média das odds excluindo a melhor
+            odds_sem_melhor = [odd for _, odd in sorted_odds[1:]]
+            return sum(odds_sem_melhor) / len(odds_sem_melhor)
+        
+        fair_over = get_fair_odd(all_overs)
+        fair_under = get_fair_odd(all_unders)
+        
+        if not fair_over or not fair_under:
+            return {}
+        
+        # Calcular EV para cada casa comparando com o "fair value"
         ev_results = {}
         
         for bookmaker, odds in bookmaker_odds.items():
@@ -112,6 +137,8 @@ def calcular_ev_player_prop(prop_data: dict) -> dict:
             
             # Calcular EV para over
             if over_odds and over_odds > 1.0:
+                # EV = (odd / fair_odd) - 1
+                # Se odd > fair_odd, há valor positivo
                 ev_over = (over_odds / fair_over) - 1
             
             # Calcular EV para under
@@ -148,7 +175,9 @@ def calcular_ev_player_prop(prop_data: dict) -> dict:
             }
         
         return ev_results
-    
+        
     except Exception as e:
         print(f"Erro ao calcular EV de player prop: {e}")
+        import traceback
+        traceback.print_exc()
         return {}
