@@ -545,7 +545,8 @@ class OddsAPI:
     
     async def get_player_props_batch(self, event_ids: List[str], bookmakers: List[str]) -> List[Dict]:
         """
-        Busca player props para múltiplos eventos
+        Busca player props para múltiplos eventos usando /v3/odds/multi
+        (Até 10 eventos de uma vez, conta como 1 requisição!)
         
         Args:
             event_ids: Lista de IDs de eventos
@@ -557,19 +558,64 @@ class OddsAPI:
         if not event_ids:
             return []
         
+        if not self._check_rate_limit():
+            print("Rate limit atingido, aguardando...")
+            return []
+        
+        # Normaliza bookmakers
+        if isinstance(bookmakers, str):
+            bookmakers = [b.strip() for b in bookmakers.split(',') if b.strip()]
+        bookmakers = list(dict.fromkeys(bookmakers or []))
+        valid_bookmakers = [b for b in bookmakers if b in self.allowed_bookmakers]
+        
+        if not valid_bookmakers:
+            valid_bookmakers = ['Bet365']
+        
         print(f"Buscando props para {len(event_ids)} eventos...")
         
-        # Buscar props de cada evento (poderia ser paralelizado com asyncio.gather)
-        all_props = []
-        for event_id in event_ids[:5]:  # Limitar a 5 eventos para não exceder rate limit
-            props = await self.get_player_props(event_id, bookmakers)
-            all_props.extend(props)
+        try:
+            self._log_request()
             
-            # Pequeno delay entre requisições
-            await asyncio.sleep(0.5)
+            # Usar /v3/odds/multi para buscar até 10 eventos de uma vez
+            url = f"{self.base_url}/odds/multi"
+            
+            # Limitar a 10 eventos (máximo da API)
+            event_ids_limited = event_ids[:10]
+            
+            params = {
+                'apiKey': self.api_key,
+                'eventIds': ','.join(event_ids_limited),  # IDs separados por vírgula
+                'bookmakers': ','.join(valid_bookmakers)
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        print(f"Erro ao buscar props multi: {response.status} - {error_text}")
+                        return []
+                    
+                    data = await response.json()
+                    
+                    # data é uma lista de eventos: [event1, event2, ...]
+                    if not isinstance(data, list):
+                        print(f"Resposta inesperada de /odds/multi: {type(data)}")
+                        return []
+                    
+                    # Parsear props de todos os eventos
+                    all_props = []
+                    for event_data in data:
+                        props = self._parse_player_props_from_event(event_data, valid_bookmakers)
+                        all_props.extend(props)
+                    
+                    print(f"Props encontrados: {len(all_props)}")
+                    return all_props
         
-        print(f"Props encontrados: {len(all_props)}")
-        return all_props
+        except Exception as e:
+            print(f"Erro ao buscar player props batch: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
     
     async def get_events(self, sport: str, status: str = 'pending', limit: int = 10) -> List[Dict]:
         """
