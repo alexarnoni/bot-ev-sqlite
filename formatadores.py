@@ -1079,14 +1079,22 @@ def formatar_alerta_player_prop(evento: dict) -> str:
     Formata alerta para player props
     """
     try:
+        from bot_core import definir_stake
+        
         # Dados básicos
         ev = evento.get('ev', 0)
-        odd = evento.get('bet365_odds', 0)
-        stake = evento.get('stake', 0)
+        odd = evento.get('odds', evento.get('bet365_odds', 0))
         bookmaker = evento.get('bookmaker', '')
-        player_name = evento.get('bet_side', '')
-        market_name = evento.get('market_name', '')
-        hdp = evento.get('hdp', '')
+        player_name = evento.get('player_name', '')
+        prop_type = evento.get('prop_type', '')
+        line = evento.get('line', 0)
+        side = evento.get('bet_side', 'over')  # 'over' ou 'under' ou string formatada
+        home_team = evento.get('home_team', '')
+        away_team = evento.get('away_team', '')
+        league = evento.get('league', '')
+        
+        # Calcula stake
+        stake = definir_stake(ev, odd)
         
         # Formata EV
         ev_str = formatar_ev(ev)
@@ -1097,27 +1105,46 @@ def formatar_alerta_player_prop(evento: dict) -> str:
         # Formata stake
         stake_str = formatar_stake(stake)
         
-        # Extrai tipo de prop do market name
-        prop_type = _extrair_tipo_prop(market_name)
+        # Formata tipo de prop
+        prop_type_display = prop_type.replace('_', ' ').title()
         
-        # Formata linha (hdp) se existir
-        linha_str = ""
-        if hdp:
-            try:
-                linha_float = float(hdp)
-                linha_str = f" O/U {linha_float:.1f}"
-            except (TypeError, ValueError):
-                pass
+        # Formata lado (over/under)
+        if side in ['over', 'under']:
+            side_display = 'Over' if side == 'over' else 'Under'
+        else:
+            # Se bet_side já está formatado (ex: "LeBron James - Points Over 27.5")
+            side_display = ''
         
         # Monta o alerta
-        alerta = f"🎯 EV+ {ev_str} | PLAYER PROP\n"
-        alerta += f"👤 {player_name} - {prop_type}{linha_str}\n"
-        alerta += f"💰 Odd: {odd_str} | Stake: {stake_str}u\n"
-        alerta += f"🏦 {bookmaker}"
+        alerta = f"🎯 <b>PLAYER PROP | EV+ {ev_str}</b>\n\n"
+        
+        # Jogo
+        if home_team and away_team:
+            alerta += f"🏀 <b>{home_team} vs {away_team}</b>\n"
+        
+        # Liga
+        if league:
+            alerta += f"🏆 <b>{league}</b>\n\n"
+        
+        # Prop details
+        alerta += f"👤 <b>{player_name}</b>\n"
+        alerta += f"📊 <b>{prop_type_display}</b>\n"
+        
+        if side_display:
+            alerta += f"📈 <b>{side_display} {line}</b>\n\n"
+        else:
+            alerta += f"📈 <b>{line}</b>\n\n"
+        
+        # Odds e stake
+        alerta += f"💰 <b>Odd:</b> {odd_str}\n"
+        alerta += f"🎯 <b>Stake:</b> {stake_str}u\n"
+        alerta += f"🏦 <b>{bookmaker}</b>"
         
         return alerta
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return f"Erro ao formatar player prop: {e}"
 
 def _extrair_tipo_prop(market_name: str) -> str:

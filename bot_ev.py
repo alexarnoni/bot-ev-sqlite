@@ -67,8 +67,16 @@ class AlertSender:
     async def _formatar_alerta_instantaneo(self, aposta: Dict[str, Any], stake: float) -> str:
         """
         Formata alerta instantâneo para EV+ 10% com destaque especial
+        Usa formatador específico para player props
         """
         try:
+            # Verificar se é player prop
+            if aposta.get('is_player_prop'):
+                from formatadores import formatar_alerta_player_prop
+                mensagem_base = formatar_alerta_player_prop(aposta)
+                # Adicionar marcador de alerta instantâneo
+                return f"🚨 <b>ALERTA INSTANTÂNEO - EV+ 10%!</b> 🚨\n\n{mensagem_base}"
+            
             # Dados básicos
             home = aposta.get('home', '')
             away = aposta.get('away', '')
@@ -131,8 +139,14 @@ class AlertSender:
     async def _formatar_alerta(self, aposta: Dict[str, Any]) -> str:
         """
         Formata o alerta de aposta com layout melhorado
+        Usa formatador específico para player props
         """
         try:
+            # Verificar se é player prop
+            if aposta.get('is_player_prop'):
+                from formatadores import formatar_alerta_player_prop
+                return formatar_alerta_player_prop(aposta)
+            
             # Dados básicos
             home = aposta.get('home', '')
             away = aposta.get('away', '')

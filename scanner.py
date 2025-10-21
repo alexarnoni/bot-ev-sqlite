@@ -286,6 +286,88 @@ async def _buscar_apostas_api(usuarios_ativos: List[Dict[str, Any]]) -> List[Dic
         logger.error(f"Erro ao buscar apostas da API: {e}")
         return []
 
+def processar_props_com_ev(props: List[Dict], ev_min: float) -> List[Dict]:
+    """
+    Processa player props e filtra por EV mínimo
+    
+    Args:
+        props: Lista de props retornados pela API
+        ev_min: EV mínimo configurado pelo usuário
+        
+    Returns:
+        Lista de props com EV+ acima do mínimo, incluindo melhor bookmaker
+    """
+    from bot_core import calcular_ev_player_prop
+    
+    props_validos = []
+    
+    for prop in props:
+        try:
+            # Calcular EV para todas as casas
+            ev_data = calcular_ev_player_prop(prop)
+            
+            if not ev_data:
+                continue
+            
+            # Encontrar melhor casa (maior EV positivo)
+            melhor_casa = max(ev_data.items(), key=lambda x: x[1]['best_ev'])
+            bookmaker_name = melhor_casa[0]
+            ev_info = melhor_casa[1]
+            
+            # Filtrar por EV mínimo
+            if ev_info['best_ev'] >= ev_min:
+                # Adicionar informações do melhor bookmaker ao prop
+                prop['ev'] = ev_info['best_ev']
+                prop['bookmaker'] = bookmaker_name
+                prop['bet_side'] = ev_info['best']  # 'over' ou 'under'
+                prop['odds'] = ev_info['best_odds']
+                prop['bet365_odds'] = ev_info['best_odds']  # Para compatibilidade com formatador
+                prop['is_player_prop'] = True
+                
+                # Formatar nome para exibição
+                prop_type_display = prop['prop_type'].replace('_', ' ').title()
+                side_display = 'Over' if ev_info['best'] == 'over' else 'Under'
+                prop['bet_side'] = f"{prop['player_name']} - {prop_type_display} {side_display} {prop['line']}"
+                
+                props_validos.append(prop)
+        
+        except Exception as e:
+            logger.error(f"Erro ao processar prop: {e}")
+            continue
+    
+    return props_validos
+
+def limitar_props_por_jogo(props: List[Dict], max_per_game: int = 5) -> List[Dict]:
+    """
+    Limita o número de props por jogo aos com maior EV
+    
+    Args:
+        props: Lista de props com EV calculado
+        max_per_game: Número máximo de props por jogo
+        
+    Returns:
+        Lista filtrada com no máximo max_per_game props por evento
+    """
+    # Agrupar por event_id
+    por_jogo = {}
+    for prop in props:
+        eid = prop.get('event_id')
+        if eid not in por_jogo:
+            por_jogo[eid] = []
+        por_jogo[eid].append(prop)
+    
+    # Pegar top N por jogo (maior EV)
+    resultado = []
+    for eid, props_jogo in por_jogo.items():
+        # Ordenar por EV (maior primeiro)
+        top = sorted(props_jogo, key=lambda x: x.get('ev', 0), reverse=True)[:max_per_game]
+        resultado.extend(top)
+        
+        if len(props_jogo) > max_per_game:
+            logger.info(f"Limitado props do evento {eid}: {len(props_jogo)} -> {max_per_game}")
+    
+    return resultado
+
 async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict[str, Any]], momento_scan: datetime = None) -> List[Dict[str, Any]]:
     """
     Processa apostas para um usuário específico - PADRONIZADO COM SCAN AUTOMÁTICO
@@ -382,6 +464,59 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
         logger.info(f"   ❌ Rejeitados (filtros_americanos): {rejeitados_americanos}")
         logger.info(f"   ❌ Rejeitados (filtros_dinamicos): {rejeitados_dinamicos}")
         logger.info(f"   ✅ Eventos aceitos: {len(eventos_validos)}")
+        
+        # 🎯 BUSCAR PLAYER PROPS (se habilitado)
+        include_props = filtros.get('include_props', False)
+        
+        # Para feed americano, props sempre ativados
+        if FEED_ID == 'feed_american':
+            include_props = True
+        
+        if include_props:
+            try:
+                logger.info("🎯 Buscando player props...")
+                
+                # Extrair event_ids de eventos americanos com EV+
+                eventos_com_ev = [e for e in eventos_validos if e.get('ev', 0) > 0.01]
+                event_ids = list(set([e.get('event_id') for e in eventos_com_ev if e.get('event_id')]))
+                
+                # Fallback: se não houver EV+, buscar próximos jogos americanos
+                if not event_ids and FEED_ID == 'feed_american':
+                    logger.info("⚠️ Nenhum evento com EV+, buscando próximos jogos americanos...")
+                    api_client = OddsAPI()
+                    event_ids = await api_client.get_upcoming_american_events(limit=5)
+                
+                if event_ids:
+                    logger.info(f"📍 Buscando props para {len(event_ids)} eventos")
+                    
+                    # Buscar props
+                    api_client = OddsAPI()
+                    props = await api_client.get_player_props_batch(event_ids, bookmakers_usuario)
+                    
+                    if props:
+                        # Processar props com EV
+                        props_com_ev = processar_props_com_ev(props, filtros.get('ev_faixa_min', 0.01))
+                        
+                        # Limitar a top 5 por jogo
+                        if props_com_ev:
+                            props_filtrados = limitar_props_por_jogo(props_com_ev, max_per_game=5)
+                            
+                            if props_filtrados:
+                                logger.info(f"✅ {len(props_filtrados)} player props encontrados com EV+")
+                                eventos_validos.extend(props_filtrados)
+                            else:
+                                logger.info("⚠️ Nenhum prop passou no filtro de EV mínimo")
+                        else:
+                            logger.info("⚠️ Nenhum prop com EV+ encontrado")
+                    else:
+                        logger.info("⚠️ Nenhum prop retornado pela API")
+                else:
+                    logger.info("⚠️ Nenhum event_id disponível para buscar props")
+            
+            except Exception as e:
+                logger.error(f"❌ Erro ao buscar player props: {e}")
+                import traceback
+                traceback.print_exc()
         
         if not eventos_validos:
             return []
