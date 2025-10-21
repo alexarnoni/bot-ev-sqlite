@@ -395,7 +395,7 @@ class OddsAPI:
         try:
             self._log_request()
             
-            url = f"{self.base_url}/v3/odds"
+            url = f"{self.base_url}/odds"
             params = {
                 'apiKey': self.api_key,
                 'eventId': event_id,
@@ -653,7 +653,7 @@ class OddsAPI:
                 print(f"Buscando eventos adicionais via /events (faltam {limit - len(event_ids)})...")
                 
                 # Apenas NBA e NFL para não exagerar
-                sports = ['basketball', 'americanfootball_nfl']
+                sports = ['basketball', 'american-football']
                 
                 for sport in sports:
                     try:

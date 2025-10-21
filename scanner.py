@@ -509,7 +509,7 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
                             else:
                                 logger.info("⚠️ Nenhum prop passou no filtro de EV mínimo")
                         else:
-                            logger.info("⚠️ Nenhum prop com EV+ encontrado")
+                            logger.info("⚠️ Nenhum prop com EV+ encontrado (normal fora de horários de jogo)")
                     else:
                         logger.info("⚠️ Nenhum prop retornado pela API")
                 else:
