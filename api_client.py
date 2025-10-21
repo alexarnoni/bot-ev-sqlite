@@ -566,6 +566,47 @@ class OddsAPI:
         print(f"Props encontrados: {len(all_props)}")
         return all_props
     
+    async def get_events(self, sport: str, status: str = 'pending', limit: int = 10) -> List[Dict]:
+        """
+        Busca eventos com filtros (novo endpoint /events)
+        
+        Args:
+            sport: Sport slug (ex: 'basketball', 'americanfootball_nfl')
+            status: Status dos eventos ('pending', 'live', 'settled')
+            limit: Número máximo de eventos (max 100)
+            
+        Returns:
+            Lista de eventos
+        """
+        if not self._check_rate_limit():
+            print("Rate limit atingido, aguardando...")
+            return []
+        
+        try:
+            self._log_request()
+            
+            url = f"{self.base_url}/events"
+            params = {
+                'apiKey': self.api_key,
+                'sport': sport,
+                'status': status,
+                'limit': min(limit, 100)  # Máximo da API
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        print(f"Erro ao buscar eventos {sport}: {response.status} - {error_text}")
+                        return []
+                    
+                    data = await response.json()
+                    return data if isinstance(data, list) else []
+        
+        except Exception as e:
+            print(f"Erro ao buscar eventos: {e}")
+            return []
+    
     # Cache para upcoming events (5 minutos)
     _upcoming_events_cache = None
     _upcoming_events_cache_time = 0
@@ -575,21 +616,25 @@ class OddsAPI:
         Busca IDs dos próximos jogos americanos (fallback quando não há EV+)
         Cache de 5 minutos para evitar chamadas repetidas
         
+        ESTRATÉGIA HÍBRIDA:
+        1. Primeiro busca em /value-bets (eventos com EV+) - 1 request
+        2. Se não tiver suficientes, complementa com /events - 1-2 requests adicionais
+        
         Returns:
             Lista de event_ids
         """
         import time
         
-        # Verificar cache
+        # Verificar cache (5 minutos)
         current_time = time.time()
         if self._upcoming_events_cache and (current_time - self._upcoming_events_cache_time) < 300:
             return self._upcoming_events_cache[:limit]
         
-        # Buscar novos eventos
+        event_ids = []
+        
         try:
-            # Usar endpoint /value-bets mas filtrar apenas esportes americanos
-            # (alternativa seria usar /v3/odds mas consumiria mais quota)
-            bookmakers = ['Bet365']  # Usar apenas 1 casa para economizar quota
+            # 1️⃣ PRIMEIRO: Buscar de /value-bets (eventos com EV+)
+            bookmakers = ['Bet365']
             all_events = await self.get_value_bets(bookmakers)
             
             # Filtrar eventos americanos
@@ -600,18 +645,48 @@ class OddsAPI:
                 and e.get('event_id')
             ]
             
-            # Extrair event_ids únicos
             event_ids = list(dict.fromkeys([e['event_id'] for e in american_events]))
+            print(f"Value-bets: {len(event_ids)} eventos americanos encontrados")
+            
+            # 2️⃣ FALLBACK: Se não tiver suficientes, buscar de /events
+            if len(event_ids) < limit:
+                print(f"Buscando eventos adicionais via /events (faltam {limit - len(event_ids)})...")
+                
+                # Apenas NBA e NFL para não exagerar
+                sports = ['basketball', 'americanfootball_nfl']
+                
+                for sport in sports:
+                    try:
+                        events = await self.get_events(sport, status='pending', limit=3)
+                        
+                        for event in events:
+                            eid = event.get('id')
+                            if eid and eid not in event_ids:
+                                event_ids.append(eid)
+                                
+                                # Parar se já tiver suficientes
+                                if len(event_ids) >= limit:
+                                    break
+                    
+                    except Exception as e:
+                        print(f"Erro ao buscar {sport}: {e}")
+                        continue
+                    
+                    # Parar se já tiver suficientes
+                    if len(event_ids) >= limit:
+                        break
             
             # Atualizar cache
             self._upcoming_events_cache = event_ids
             self._upcoming_events_cache_time = current_time
             
-            print(f"Cache atualizado: {len(event_ids)} eventos americanos encontrados")
+            print(f"✅ Total: {len(event_ids)} event_ids encontrados")
             return event_ids[:limit]
         
         except Exception as e:
-            print(f"Erro ao buscar upcoming events: {e}")
+            print(f"❌ Erro ao buscar upcoming events: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
 # Alias para compatibilidade com testes

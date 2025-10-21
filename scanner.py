@@ -477,7 +477,9 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
                 logger.info("🎯 Buscando player props...")
                 
                 # Extrair event_ids de eventos americanos com EV+
-                eventos_com_ev = [e for e in eventos_validos if e.get('ev', 0) > 0.01]
+                # Usar EV mínimo configurado pelo usuário
+                ev_threshold = filtros.get('ev_faixa_min', 0.01)
+                eventos_com_ev = [e for e in eventos_validos if e.get('ev', 0) >= ev_threshold]
                 event_ids = list(set([e.get('event_id') for e in eventos_com_ev if e.get('event_id')]))
                 
                 # Fallback: se não houver EV+, buscar próximos jogos americanos
