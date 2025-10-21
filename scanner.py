@@ -507,9 +507,16 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
                 if event_ids:
                     logger.info(f"📍 Buscando props para {len(event_ids)} eventos")
                     
-                    # Buscar props
+                    # Buscar props com TODAS as casas que oferecem props
+                    # Props precisam de múltiplas casas para calcular EV
+                    # Usar casas americanas + brasileiras disponíveis
+                    bookmakers_para_props = [
+                        'Bet365', 'BetMGM', 'Betano', 'Betfair Sportsbook',
+                        'Novibet', 'Superbet', 'Caesars', 'PointsBet'
+                    ]
+                    
                     api_client = OddsAPI()
-                    props = await api_client.get_player_props_batch(event_ids, bookmakers_usuario)
+                    props = await api_client.get_player_props_batch(event_ids, bookmakers_para_props)
                     
                     if props:
                         # Processar props com EV
@@ -530,7 +537,7 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
                         logger.info("⚠️ Nenhum prop retornado pela API")
                 else:
                     logger.info("⚠️ Nenhum event_id disponível para buscar props")
-            
+                
             except Exception as e:
                 logger.error(f"❌ Erro ao buscar player props: {e}")
                 import traceback
