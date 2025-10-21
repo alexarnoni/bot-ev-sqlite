@@ -456,12 +456,17 @@ class OddsAPI:
                     
                     # Cada odd no mercado é um jogador diferente
                     for odd_entry in market.get('odds', []):
-                        player_name = odd_entry.get('label', '')
+                        player_name = odd_entry.get('label', '').strip()
                         line = self._parse_float(odd_entry.get('hdp', 0))
                         over_odds = self._parse_float(odd_entry.get('over'))
                         under_odds = self._parse_float(odd_entry.get('under'))
                         
-                        if not player_name or line is None:
+                        # Filtrar props sem nome de jogador ou linha
+                        if not player_name or line is None or line == 0:
+                            continue
+                        
+                        # Filtrar props que são totais de equipe (não individuais)
+                        if player_name.startswith('(') or player_name.lower() in ['total', 'spread', 'team total']:
                             continue
                         
                         # Chave única: player + prop_type + line

@@ -80,8 +80,38 @@ def calcular_ev_player_prop(prop_data: dict) -> dict:
     try:
         bookmaker_odds = prop_data.get('bookmaker_odds', {})
         
-        if not bookmaker_odds or len(bookmaker_odds) < 2:
-            return {}  # Precisa de pelo menos 2 casas para comparar
+        if not bookmaker_odds:
+            return {}
+        
+        # Se tiver apenas 1 casa, retornar EV = 0 (sem comparação possível)
+        if len(bookmaker_odds) == 1:
+            bookmaker = list(bookmaker_odds.keys())[0]
+            odds = bookmaker_odds[bookmaker]
+            over_odds = odds.get('over')
+            under_odds = odds.get('under')
+            
+            # Determinar melhor lado
+            if over_odds and under_odds:
+                if over_odds > under_odds:
+                    best_side, best_odds = 'over', over_odds
+                else:
+                    best_side, best_odds = 'under', under_odds
+            elif over_odds:
+                best_side, best_odds = 'over', over_odds
+            elif under_odds:
+                best_side, best_odds = 'under', under_odds
+            else:
+                return {}
+            
+            return {
+                bookmaker: {
+                    'over': 0.0,
+                    'under': 0.0,
+                    'best': best_side,
+                    'best_ev': 0.0,  # Sem EV com apenas 1 casa
+                    'best_odds': best_odds
+                }
+            }
         
         # Coletar todas as odds por bookmaker
         all_overs = []  # [(bookmaker, odd), ...]
