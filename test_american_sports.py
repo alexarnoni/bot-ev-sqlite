@@ -102,7 +102,7 @@ async def test_player_props():
                         print(f"Testando props para evento {event_id}...")
                         
                         # Busca odds com bookmakers que oferecem props
-                        bookmakers = 'DraftKings,FanDuel,BetMGM'
+                        bookmakers = 'BetMGM,Betano,Bet365'
                         odds_url = f"https://api.odds-api.io/v3/odds"
                         odds_params = {
                             'apiKey': api_key,

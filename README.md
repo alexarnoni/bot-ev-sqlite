@@ -149,7 +149,7 @@ export BOT_TOKEN_FEED_AMERICAN="seu_token_aqui"
 
 ### Setup do Feed Americano
 
-1. **Bookmakers**: Escolha as casas de apostas (DraftKings, FanDuel, BetMGM recomendados para props)
+1. **Bookmakers**: Escolha as casas de apostas (BetMGM, Betano, Bet365 recomendados para props)
 2. **EV Mínimo**: Configure o valor esperado mínimo (3%, 5%, 8%, 12% ou personalizado)
 3. **Player Props**: Ative/desative apostas em jogadores específicos
 
@@ -167,7 +167,7 @@ export BOT_TOKEN_FEED_AMERICAN="seu_token_aqui"
 🏀 NBA - Lakers vs Celtics
 👤 LeBron James - Points Over 27.5
 💰 Odd: 1.90 | Stake: 1.0u
-🏦 DraftKings
+🏦 Betano
 ```
 
 ## 📱 Comandos do Bot

@@ -72,10 +72,144 @@ class AlertSender:
         try:
             # Verificar se é player prop
             if aposta.get('is_player_prop'):
-                from formatadores import formatar_alerta_player_prop
-                mensagem_base = formatar_alerta_player_prop(aposta)
-                # Adicionar marcador de alerta instantâneo
-                return f"🚨 <b>ALERTA INSTANTÂNEO - EV+ 10%!</b> 🚨\n\n{mensagem_base}"
+                # Import seguro
+                try:
+                    from formatadores import montar_nome_mercado, formatar_data_jogo, safe_html
+                except Exception:
+                    def montar_nome_mercado(e): 
+                        return (e.get("market_name") or (e.get("market") or {}).get("name") or "").title()
+                    def formatar_data_jogo(s): 
+                        return ""
+                    def safe_html(s): 
+                        import html as _h; return _h.escape(s or "")
+
+                # Monta nome do mercado
+                nome_mercado = montar_nome_mercado(aposta)
+
+                # Extrai jogador do texto entre parênteses
+                player = ""
+                m = re.search(r'\(([^)]+)\)', nome_mercado)
+                if m:
+                    player = m.group(1).strip()
+                else:
+                    player = aposta.get('player', '') or aposta.get('selection', '')
+
+                # Tipo de prop (remove jogador entre parênteses)
+                prop_tipo = re.sub(r'\s*\(.*?\)', '', nome_mercado).strip()
+
+                # Linha (hdp, total, line, points)
+                linha = None
+                for field in ['hdp', 'total', 'line', 'points']:
+                    val = aposta.get(field)
+                    if val is not None:
+                        try:
+                            linha = float(val)
+                            break
+                        except (TypeError, ValueError):
+                            continue
+
+                # Odd principal
+                odd = aposta.get('odds') or aposta.get('bet365_odds') or aposta.get('odds_home') or aposta.get('odds_away') or aposta.get('price') or "?"
+                try:
+                    odd_float = float(odd)
+                    odd_txt = f"{odd_float:.2f}"
+                except (TypeError, ValueError):
+                    odd_txt = str(odd)
+
+                # Outros campos
+                book = safe_html(aposta.get('bookmaker', ''))
+                liga = safe_html(aposta.get('league', ''))
+                home = safe_html((aposta.get('home') or '').strip())
+                away = safe_html((aposta.get('away') or '').strip())
+                quando = formatar_data_jogo(aposta.get('commence_time'))
+
+                # EV
+                ev_val = aposta.get('ev')
+                ev_txt = None
+                if ev_val is not None:
+                    try:
+                        ev_float = float(ev_val)
+                        if ev_float > 0:
+                            ev_txt = f"{ev_float:.2%}"
+                    except (TypeError, ValueError):
+                        pass
+
+                # Monta mensagem
+                msg = "🚨 <b>ALERTA INSTANTÂNEO - EV+ 10%!</b> 🚨\n\n"
+                msg += "🎯 <b>PLAYER PROP</b>\n"
+                
+                if liga:
+                    msg += f"🏆 <b>{liga}</b>\n\n"
+                
+                if player:
+                    msg += f"👤 <b>{safe_html(player)}</b>\n"
+                
+                if prop_tipo:
+                    if linha is not None:
+                        msg += f"📊 {safe_html(prop_tipo)} — <b>{linha}</b>\n"
+                    else:
+                        msg += f"📊 {safe_html(prop_tipo)}\n"
+                
+                if ev_txt:
+                    msg += f"📈 <b>EV:</b> {ev_txt}\n"
+                
+                if home and away:
+                    msg += f"🏟️ {home} vs {away}\n"
+                
+                if quando:
+                    msg += f"🗓️ {quando}\n"
+                
+                msg += f"\n💰 <b>Odd:</b> {odd_txt}"
+                if book:
+                    msg += f"\n🏦 {book}"
+
+                # Link
+                href = None
+                raw_bet = aposta.get('raw_bet', {})
+                if isinstance(raw_bet, dict):
+                    bookmaker_odds = raw_bet.get('bookmakerOdds', {})
+                    if isinstance(bookmaker_odds, dict):
+                        href = bookmaker_odds.get('href')
+                if not href:
+                    href = aposta.get('event_url')
+                
+                if href:
+                    msg += f"\n🔗 <a href=\"{href}\">Abrir na casa</a>"
+
+                # Mini comparador Over/Under
+                try:
+                    # Tenta usar dados do ev_info se disponível
+                    ev_info = aposta.get('ev_info', {})
+                    best_over = ev_info.get('best_over')
+                    best_under = ev_info.get('best_under')
+                    
+                    if not best_over or not best_under:
+                        # Fallback: calcula diretamente dos dados
+                        odds_info = raw_bet.get('bookmakerOdds', {})
+                        if isinstance(odds_info, dict):
+                            melhores = []
+                            for bk_name, odds in odds_info.items():
+                                if isinstance(odds, dict):
+                                    try:
+                                        over_val = float(odds.get('over', 0))
+                                        under_val = float(odds.get('under', 0))
+                                        if over_val > 0 and under_val > 0:
+                                            melhores.append((safe_html(bk_name), over_val, under_val))
+                                    except (TypeError, ValueError):
+                                        continue
+
+                            if melhores:
+                                best_over = max(melhores, key=lambda x: x[1])
+                                best_under = max(melhores, key=lambda x: x[2])
+                    
+                    if best_over and best_under:
+                        msg += "\n\n📊 <b>Comparador (Melhores Odds)</b>\n"
+                        msg += f"⬆️ Over: {best_over[1]:.2f} ({best_over[0]})\n"
+                        msg += f"⬇️ Under: {best_under[1]:.2f} ({best_under[0]})\n"
+                except Exception:
+                    pass
+
+                return msg
             
             # Dados básicos
             home = aposta.get('home', '')
@@ -144,8 +278,143 @@ class AlertSender:
         try:
             # Verificar se é player prop
             if aposta.get('is_player_prop'):
-                from formatadores import formatar_alerta_player_prop
-                return formatar_alerta_player_prop(aposta)
+                # Import seguro
+                try:
+                    from formatadores import montar_nome_mercado, formatar_data_jogo, safe_html
+                except Exception:
+                    def montar_nome_mercado(e): 
+                        return (e.get("market_name") or (e.get("market") or {}).get("name") or "").title()
+                    def formatar_data_jogo(s): 
+                        return ""
+                    def safe_html(s): 
+                        import html as _h; return _h.escape(s or "")
+
+                # Monta nome do mercado
+                nome_mercado = montar_nome_mercado(aposta)
+
+                # Extrai jogador do texto entre parênteses
+                player = ""
+                m = re.search(r'\(([^)]+)\)', nome_mercado)
+                if m:
+                    player = m.group(1).strip()
+                else:
+                    player = aposta.get('player', '') or aposta.get('selection', '')
+
+                # Tipo de prop (remove jogador entre parênteses)
+                prop_tipo = re.sub(r'\s*\(.*?\)', '', nome_mercado).strip()
+
+                # Linha (hdp, total, line, points)
+                linha = None
+                for field in ['hdp', 'total', 'line', 'points']:
+                    val = aposta.get(field)
+                    if val is not None:
+                        try:
+                            linha = float(val)
+                            break
+                        except (TypeError, ValueError):
+                            continue
+
+                # Odd principal
+                odd = aposta.get('odds') or aposta.get('bet365_odds') or aposta.get('odds_home') or aposta.get('odds_away') or aposta.get('price') or "?"
+                try:
+                    odd_float = float(odd)
+                    odd_txt = f"{odd_float:.2f}"
+                except (TypeError, ValueError):
+                    odd_txt = str(odd)
+
+                # Outros campos
+                book = safe_html(aposta.get('bookmaker', ''))
+                liga = safe_html(aposta.get('league', ''))
+                home = safe_html((aposta.get('home') or '').strip())
+                away = safe_html((aposta.get('away') or '').strip())
+                quando = formatar_data_jogo(aposta.get('commence_time'))
+
+                # EV
+                ev_val = aposta.get('ev')
+                ev_txt = None
+                if ev_val is not None:
+                    try:
+                        ev_float = float(ev_val)
+                        if ev_float > 0:
+                            ev_txt = f"{ev_float:.2%}"
+                    except (TypeError, ValueError):
+                        pass
+
+                # Monta mensagem
+                msg = "🎯 <b>PLAYER PROP</b>\n"
+                
+                if liga:
+                    msg += f"🏆 <b>{liga}</b>\n\n"
+                
+                if player:
+                    msg += f"👤 <b>{safe_html(player)}</b>\n"
+                
+                if prop_tipo:
+                    if linha is not None:
+                        msg += f"📊 {safe_html(prop_tipo)} — <b>{linha}</b>\n"
+                    else:
+                        msg += f"📊 {safe_html(prop_tipo)}\n"
+                
+                if ev_txt:
+                    msg += f"📈 <b>EV:</b> {ev_txt}\n"
+                
+                if home and away:
+                    msg += f"🏟️ {home} vs {away}\n"
+                
+                if quando:
+                    msg += f"🗓️ {quando}\n"
+                
+                msg += f"\n💰 <b>Odd:</b> {odd_txt}"
+                if book:
+                    msg += f"\n🏦 {book}"
+
+                # Link
+                href = None
+                raw_bet = aposta.get('raw_bet', {})
+                if isinstance(raw_bet, dict):
+                    bookmaker_odds = raw_bet.get('bookmakerOdds', {})
+                    if isinstance(bookmaker_odds, dict):
+                        href = bookmaker_odds.get('href')
+                if not href:
+                    href = aposta.get('event_url')
+                
+                if href:
+                    msg += f"\n🔗 <a href=\"{href}\">Abrir na casa</a>"
+
+                # Mini comparador Over/Under
+                try:
+                    # Tenta usar dados do ev_info se disponível
+                    ev_info = aposta.get('ev_info', {})
+                    best_over = ev_info.get('best_over')
+                    best_under = ev_info.get('best_under')
+                    
+                    if not best_over or not best_under:
+                        # Fallback: calcula diretamente dos dados
+                        odds_info = raw_bet.get('bookmakerOdds', {})
+                        if isinstance(odds_info, dict):
+                            melhores = []
+                            for bk_name, odds in odds_info.items():
+                                if isinstance(odds, dict):
+                                    try:
+                                        over_val = float(odds.get('over', 0))
+                                        under_val = float(odds.get('under', 0))
+                                        if over_val > 0 and under_val > 0:
+                                            melhores.append((safe_html(bk_name), over_val, under_val))
+                                    except (TypeError, ValueError):
+                                        continue
+
+                            if melhores:
+                                best_over = max(melhores, key=lambda x: x[1])
+                                best_under = max(melhores, key=lambda x: x[2])
+                    
+                    if best_over and best_under:
+                        msg += "\n\n📊 <b>Comparador (Melhores Odds)</b>\n"
+                        msg += f"⬆️ Over: {best_over[1]:.2f} ({best_over[0]})\n"
+                        msg += f"⬇️ Under: {best_under[1]:.2f} ({best_under[0]})\n"
+                except Exception:
+                    pass
+
+                return msg
             
             # Dados básicos
             home = aposta.get('home', '')

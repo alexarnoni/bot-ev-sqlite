@@ -8,6 +8,7 @@ from typing import List, Dict, Optional
 from config import ODDS_API_KEY, ODDS_API_BASE, RATE_LIMIT_REQUESTS_PER_HOUR
 from database import get_db, generate_alert_hash
 from bot_core import calcular_ev
+from bookmaker_config import BOOKMAKERS_ATIVOS, canonical_bookmaker, is_supported_bookmaker
 
 class OddsAPI:
     def __init__(self):
@@ -19,9 +20,7 @@ class OddsAPI:
         self.db = get_db()
         print(f"✅ API Client inicializada (key: {self.api_key[:8]}...)")
         # Lista de bookmakers suportados pela integração atual
-        self.allowed_bookmakers = [
-            'Bet365', 'Betfair Sportsbook', 'Novibet', 'Superbet', 'BetMGM', 'Betano'
-        ]
+        self.allowed_bookmakers = BOOKMAKERS_ATIVOS[:]  # cópia
     
     def _check_rate_limit(self) -> bool:
         """Verifica se pode fazer requisição sem exceder rate limit"""
@@ -37,6 +36,58 @@ class OddsAPI:
         try:
             return float(value) if value else None
         except (ValueError, TypeError):
+            return None
+    
+    def _calcular_ev_prop(self, bet: dict) -> Optional[float]:
+        """
+        Calcula EV para player props usando ev_utils
+        """
+        try:
+            # Import seguro
+            try:
+                from ev_utils import calc_ev_prop
+            except Exception:
+                # Fallback para EV da API se não conseguir importar
+                return (bet.get('expectedValue', 0) / 100) - 1
+            
+            # Só calcula EV para player props
+            if not self._is_player_prop_market(bet.get('market', {}).get('name', ''), bet):
+                return (bet.get('expectedValue', 0) / 100) - 1
+            
+            # Extrai dados do raw_bet
+            raw_bet = bet.get('raw_bet', bet)
+            bookmaker_odds = raw_bet.get('bookmakerOdds', {})
+            
+            if not isinstance(bookmaker_odds, dict):
+                return None
+            
+            # Determina o lado (over/under)
+            bet_side = bet.get('betSide', '').lower()
+            if bet_side not in ['over', 'under']:
+                bet_side = 'over'  # default
+            
+            # Chama o novo cálculo de EV
+            ev_info = calc_ev_prop(
+                bookmaker_odds=bookmaker_odds,
+                side=bet_side,
+                offer_casa=bet.get('bookmaker'),
+                offer_odd_raw=bet.get('bookmakerOdds', {}).get('over') or bet.get('bookmakerOdds', {}).get('under')
+            )
+            
+            # Armazena ev_info no bet para uso posterior
+            bet['ev_info'] = ev_info
+            
+            if ev_info and ev_info.get('ev') is not None:
+                ev_val = ev_info['ev']
+                # Log amigável
+                print(f"📊 Prop OK | EV: {ev_val:.4f} | side={bet_side}")
+                return ev_val
+            else:
+                print("⚠️ Prop sem EV estimável: faltam pares O/U suficientes para remover vig")
+                return None
+                
+        except Exception as e:
+            print(f"Erro ao calcular EV de prop: {e}")
             return None
     
     def __parse_evento(self, bet):
@@ -94,7 +145,7 @@ class OddsAPI:
                 "odds_draw": self._parse_float(odds.get('draw', 0.0)) or 0.0,
                 "hdp": bet.get('market', {}).get('hdp'),
                 "total": bet.get('market', {}).get('total'),
-                "ev": (bet.get('expectedValue', 0) / 100) - 1,
+                "ev": self._calcular_ev_prop(bet),
                 "event_url": odds.get('href', ''),
                 "bookmaker": bookmaker,
                 "is_player_prop": is_player_prop,  # Novo campo para identificar props
@@ -161,14 +212,14 @@ class OddsAPI:
         # Normaliza input: aceita string única com vírgulas ou lista; filtra inválidos e remove duplicatas
         if isinstance(bookmakers, str):
             bookmakers = [b.strip() for b in bookmakers.split(',') if b.strip()]
-        bookmakers = list(dict.fromkeys(bookmakers or []))  # de-dup preservando ordem
-
-        # Remove entradas não suportadas (ex.: 'Stake.bet.br') e quaisquer inválidas
-        valid_bookmakers = [b for b in bookmakers if b in self.allowed_bookmakers]
-
-        # Fallback se vazio após validação
-        if not valid_bookmakers:
-            valid_bookmakers = ['Bet365']
+        bookmakers = [canonical_bookmaker(b) for b in (bookmakers or [])]
+        # filtra apenas suportados
+        bookmakers = [b for b in bookmakers if is_supported_bookmaker(b)]
+        # de-dup preservando ordem
+        seen=set(); bookmakers=[b for b in bookmakers if not (b in seen or seen.add(b))]
+        # fallback caso vazio
+        if not bookmakers:
+            bookmakers = [BOOKMAKERS_ATIVOS[0]]
         
         try:
             self._log_request()
@@ -176,7 +227,7 @@ class OddsAPI:
             url = f"{self.base_url}/value-bets"
             params = {
                 'apiKey': self.api_key,
-                'bookmaker': ','.join(valid_bookmakers),  # ✅ OBRIGATÓRIO
+                'bookmaker': ','.join(bookmakers),  # ✅ OBRIGATÓRIO
                 'includeEventDetails': 'true'
             }
             
@@ -234,8 +285,9 @@ class OddsAPI:
             print("Rate limit atingido, aguardando...")
             return []
         
-        # Validação do bookmaker individual
-        if bookmaker not in self.allowed_bookmakers:
+        # Normaliza bookmaker
+        bookmaker = canonical_bookmaker(bookmaker)
+        if not is_supported_bookmaker(bookmaker):
             print(f"Bookmaker '{bookmaker}' não suportado, ignorando...")
             return []
 
@@ -279,35 +331,40 @@ class OddsAPI:
         """
         if not self._check_rate_limit():
             return []
-        
         try:
             self._log_request()
-            
-            # Endpoint para buscar bookmakers disponíveis
-            url = f"{self.base_url}/sports"
+            url = f"{self.base_url}/bookmakers"     # usar endpoint correto
             params = {'apiKey': self.api_key}
-            
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        # A API retorna esportes, vamos usar lista fixa dos principais bookmakers
-                        # que sabemos que estão ativos na API
-                        bookmakers = self.allowed_bookmakers.copy()
-                        print(f"✅ API: {len(bookmakers)} bookmakers ativos encontrados")
-                        return bookmakers
-                    elif response.status == 401:
-                        print("❌ API Key inválida para buscar bookmakers")
-                        return []
-                    else:
-                        print(f"❌ Erro ao buscar bookmakers: {response.status}")
-                        # Fallback para lista básica se o endpoint falhar
-                        return self.allowed_bookmakers.copy()
-        
-        except Exception as e:
-            print(f"❌ Erro ao buscar bookmakers: {e}")
-            # Fallback para lista básica em caso de erro
-            return self.allowed_bookmakers.copy()
+                        nomes = []
+                        for item in (data or []):
+                            if not isinstance(item, dict):
+                                continue
+                            if not item.get("active", False):
+                                continue
+                            nome = canonical_bookmaker(item.get("name", ""))
+                            if nome and is_supported_bookmaker(nome):
+                                nomes.append(nome)
+
+                        # dedup preservando ordem
+                        vistos = set()
+                        nomes = [n for n in nomes if not (n in vistos or vistos.add(n))]
+
+                        # Garante presença das casas preferidas (inclui Betano caso não venha)
+                        preferencia = {bk: i for i, bk in enumerate(BOOKMAKERS_ATIVOS)}
+                        for must in BOOKMAKERS_ATIVOS:
+                            if must not in nomes:
+                                nomes.append(must)
+                        # ordena pela preferência
+                        nomes.sort(key=lambda x: preferencia.get(x, 999))
+                        print(f"✅ Bookmakers encontrados: {nomes}")
+                        return nomes
+                    return BOOKMAKERS_ATIVOS[:]
+        except Exception:
+            return BOOKMAKERS_ATIVOS[:]
     
     def get_api_status(self) -> Dict:
         """Retorna status atual da API"""
@@ -386,11 +443,14 @@ class OddsAPI:
         # Normaliza bookmakers
         if isinstance(bookmakers, str):
             bookmakers = [b.strip() for b in bookmakers.split(',') if b.strip()]
-        bookmakers = list(dict.fromkeys(bookmakers or []))
-        valid_bookmakers = [b for b in bookmakers if b in self.allowed_bookmakers]
-        
-        if not valid_bookmakers:
-            valid_bookmakers = ['Bet365']
+        bookmakers = [canonical_bookmaker(b) for b in (bookmakers or [])]
+        # filtra apenas suportados
+        bookmakers = [b for b in bookmakers if is_supported_bookmaker(b)]
+        # de-dup preservando ordem
+        seen=set(); bookmakers=[b for b in bookmakers if not (b in seen or seen.add(b))]
+        # fallback caso vazio
+        if not bookmakers:
+            bookmakers = [BOOKMAKERS_ATIVOS[0]]
         
         try:
             self._log_request()
@@ -399,7 +459,7 @@ class OddsAPI:
             params = {
                 'apiKey': self.api_key,
                 'eventId': event_id,
-                'bookmakers': ','.join(valid_bookmakers)
+                'bookmakers': ','.join(bookmakers)
             }
             
             async with aiohttp.ClientSession() as session:
@@ -412,7 +472,7 @@ class OddsAPI:
                     data = await response.json()
                     
                     # Parsear props do evento
-                    props = self._parse_player_props_from_event(data, valid_bookmakers)
+                    props = self._parse_player_props_from_event(data, bookmakers)
                     return props
         
         except Exception as e:
@@ -565,11 +625,14 @@ class OddsAPI:
         # Normaliza bookmakers
         if isinstance(bookmakers, str):
             bookmakers = [b.strip() for b in bookmakers.split(',') if b.strip()]
-        bookmakers = list(dict.fromkeys(bookmakers or []))
-        valid_bookmakers = [b for b in bookmakers if b in self.allowed_bookmakers]
-        
-        if not valid_bookmakers:
-            valid_bookmakers = ['Bet365']
+        bookmakers = [canonical_bookmaker(b) for b in (bookmakers or [])]
+        # filtra apenas suportados
+        bookmakers = [b for b in bookmakers if is_supported_bookmaker(b)]
+        # de-dup preservando ordem
+        seen=set(); bookmakers=[b for b in bookmakers if not (b in seen or seen.add(b))]
+        # fallback caso vazio
+        if not bookmakers:
+            bookmakers = [BOOKMAKERS_ATIVOS[0]]
         
         print(f"Buscando props para {len(event_ids)} eventos...")
         
@@ -584,8 +647,8 @@ class OddsAPI:
             
             params = {
                 'apiKey': self.api_key,
-                'eventIds': ','.join(event_ids_limited),  # IDs separados por vírgula
-                'bookmakers': ','.join(valid_bookmakers)
+                'eventIds': ','.join(str(eid) for eid in event_ids_limited),  # IDs separados por vírgula (converter para string)
+                'bookmakers': ','.join(bookmakers)
             }
             
             async with aiohttp.ClientSession() as session:
@@ -605,7 +668,7 @@ class OddsAPI:
                     # Parsear props de todos os eventos
                     all_props = []
                     for event_data in data:
-                        props = self._parse_player_props_from_event(event_data, valid_bookmakers)
+                        props = self._parse_player_props_from_event(event_data, bookmakers)
                         all_props.extend(props)
                     
                     print(f"Props encontrados: {len(all_props)}")

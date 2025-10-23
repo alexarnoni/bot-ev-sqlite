@@ -1,7 +1,13 @@
 """
 Formatadores para exibição de dados
 """
-from typing import Union
+import html
+import re
+from datetime import datetime, timezone, timedelta
+from typing import Union, Optional
+
+# Timezone do Brasil (UTC-3)
+BR_TZ = timezone(timedelta(hours=-3))
 
 def formatar_ev(ev: Union[float, int]) -> str:
     """
@@ -1182,3 +1188,80 @@ def _extrair_tipo_prop(market_name: str) -> str:
     
     # Fallback: usa o market name capitalizado
     return market_name.title()
+
+def formatar_data_jogo(commence_time: Optional[str]) -> str:
+    """
+    Formata data do jogo para horário de Brasília
+    Recebe ISO (com ou sem "Z"), converte pra Brasília e retorna DD/MM HH:MM
+    Se falhar, retorna ""
+    """
+    try:
+        if not commence_time:
+            return ""
+        
+        # Remove 'Z' se existir e adiciona timezone UTC
+        if commence_time.endswith('Z'):
+            commence_time = commence_time[:-1] + '+00:00'
+        
+        # Parse da data
+        if '+' in commence_time or commence_time.endswith('Z'):
+            # Tem timezone
+            dt = datetime.fromisoformat(commence_time)
+        else:
+            # Sem timezone, assume UTC
+            dt = datetime.fromisoformat(commence_time)
+            dt = dt.replace(tzinfo=timezone.utc)
+        
+        # Converte para horário de Brasília
+        dt_brasilia = dt.astimezone(BR_TZ)
+        
+        # Formata DD/MM HH:MM
+        return dt_brasilia.strftime("%d/%m %H:%M")
+        
+    except Exception:
+        return ""
+
+def montar_nome_mercado(evento: dict) -> str:
+    """
+    Monta nome do mercado normalizado
+    Usa market_name ou market.name, normaliza título, injeta jogador entre parênteses se não existir
+    """
+    try:
+        # Tenta pegar market_name primeiro
+        market_name = evento.get('market_name', '')
+        
+        # Se não tiver, tenta market.name
+        if not market_name:
+            market = evento.get('market', {})
+            if isinstance(market, dict):
+                market_name = market.get('name', '')
+        
+        if not market_name:
+            return ""
+        
+        # Normaliza título
+        market_name = market_name.strip().title()
+        
+        # Verifica se já tem jogador entre parênteses
+        if '(' in market_name and ')' in market_name:
+            return market_name
+        
+        # Tenta extrair jogador de outros campos
+        player = evento.get('player', '') or evento.get('bet_side', '')
+        if player and player not in ['over', 'under', 'home', 'away']:
+            # Adiciona jogador entre parênteses
+            return f"{market_name} ({player})"
+        
+        return market_name
+        
+    except Exception:
+        return ""
+
+def safe_html(s: str) -> str:
+    """
+    Sanitiza string para HTML
+    """
+    try:
+        return html.escape(s or "")
+    except Exception:
+        return ""

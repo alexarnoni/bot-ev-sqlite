@@ -1,6 +1,7 @@
 import os
 import logging
 import html
+import asyncio
 from pathlib import Path
 from datetime import date, datetime, timedelta
 
@@ -23,6 +24,12 @@ from scanner import scan_apostas_usuario
 from scanner import scan_apostas
 from status import get_odds_api_status
 from utils import carregar_catalogo_ligas, TRADUCAO_ESPORTE_EN
+
+# Import US Props Handlers
+from bot_ev_us.handlers_props import (
+    handle_usa_jogos, handle_props, handle_props_tipo, 
+    handle_props_watch_start, handle_props_watch_stop, handle_props_watch_list
+)
 
 BOOKMAKERS_POR_PAGINA = 30
 
@@ -440,7 +447,7 @@ async def setup_american_passo1_callback(update, context):
     
     mensagem = "🇺🇸 <b>Passo 1/3: Bookmakers</b>\n\n"
     mensagem += "Escolha as casas de apostas que você usa:\n\n"
-    mensagem += "💡 <i>Dica: Player Props são mais comuns em DraftKings, FanDuel, BetMGM</i>"
+    mensagem += "💡 <i>Dica: Player Props são mais comuns em BetMGM</i>"
     
     await query.edit_message_text(mensagem, reply_markup=reply_markup, parse_mode='HTML')
 
@@ -506,7 +513,7 @@ async def setup_american_finalizar_callback(update, context):
     # Adiciona bookmakers padrão se não tiver nenhum
     bookmakers_existentes = db.get_user_bookmakers(chat_id)
     if not bookmakers_existentes:
-        bookmakers_padrao = ['Bet365', 'BetMGM', 'DraftKings', 'FanDuel']
+        bookmakers_padrao = ['Bet365', 'BetMGM', 'Betano', 'Betfair Sportsbook', 'Novibet', 'Superbet']
         db.set_user_bookmakers(chat_id, bookmakers_padrao)
     
     # Adiciona esportes americanos
@@ -3584,6 +3591,59 @@ app.add_handler(CallbackQueryHandler(esporte_callback_handler, pattern="^esporte
 
 # Callbacks para limpeza
 app.add_handler(CallbackQueryHandler(limpar_callback_handler, pattern="^limpar_"))
+
+# Comandos US Props (Feed Americano)
+async def usa_jogos_handler(update, context):
+    liga = context.args[0] if context.args else None
+    result = await handle_usa_jogos(update.effective_chat.id, liga)
+    await update.message.reply_text(result)
+
+async def props_handler(update, context):
+    event_id = context.args[0] if context.args else None
+    stat_type = context.args[1] if len(context.args) > 1 else None
+    casas = context.args[2] if len(context.args) > 2 else None
+    result = await handle_props(update.effective_chat.id, event_id, stat_type, casas)
+    await update.message.reply_text(result)
+
+async def props_tipo_handler(update, context):
+    if len(context.args) < 2:
+        await update.message.reply_text("Uso: /props_tipo <eventId> <statType>")
+        return
+    result = await handle_props_tipo(update.effective_chat.id, context.args[0], context.args[1])
+    await update.message.reply_text(result)
+
+async def props_watch_handler(update, context):
+    if not context.args:
+        result = await handle_props_watch_list(update.effective_chat.id)
+    elif context.args[0] == "start":
+        if len(context.args) < 2:
+            await update.message.reply_text("Uso: /props_watch start <eventId> [interval] [casas] [statType] [player]")
+            return
+        event_id = context.args[1]
+        interval = int(context.args[2]) if len(context.args) > 2 else 60
+        casas = context.args[3] if len(context.args) > 3 else None
+        stat_type = context.args[4] if len(context.args) > 4 else "*"
+        player = context.args[5] if len(context.args) > 5 else "*"
+        result = await handle_props_watch_start(update.effective_chat.id, event_id, interval, casas, stat_type, player)
+    elif context.args[0] == "stop":
+        if len(context.args) < 2:
+            await update.message.reply_text("Uso: /props_watch stop <eventId>")
+            return
+        result = await handle_props_watch_stop(update.effective_chat.id, context.args[1])
+    else:
+        result = await handle_props_watch_list(update.effective_chat.id)
+    
+    await update.message.reply_text(result)
+
+async def props_watch_list_handler(update, context):
+    result = await handle_props_watch_list(update.effective_chat.id)
+    await update.message.reply_text(result)
+
+app.add_handler(CommandHandler("usa_jogos", usa_jogos_handler))
+app.add_handler(CommandHandler("props", props_handler))
+app.add_handler(CommandHandler("props_tipo", props_tipo_handler))
+app.add_handler(CommandHandler("props_watch", props_watch_handler))
+app.add_handler(CommandHandler("props_watch_list", props_watch_list_handler))
 
 # Botões interativos das regiões (start e presets) - DEVE SER O ÚLTIMO
 app.add_handler(CallbackQueryHandler(callback_handler))

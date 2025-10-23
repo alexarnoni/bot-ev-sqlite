@@ -1,9 +1,45 @@
 """
-Configuração de bookmakers - verifica se usuário está configurado
+Configuração de bookmakers - fonte única da verdade
 """
 import asyncio
 from database import get_db
 import os
+
+# ===========================================
+# CONFIGURAÇÃO DE BOOKMAKERS
+# ===========================================
+
+BOOKMAKERS_ATIVOS = [
+    "Bet365",
+    "BetMGM",
+    "Betano",
+    "Betfair Sportsbook",
+    "Novibet",
+    "Superbet",
+]
+
+BOOKMAKER_ALIASES = {
+    "bet365": "Bet365",
+    "bet mgm": "BetMGM",
+    "betmgm": "BetMGM",
+    "mgm": "BetMGM",
+    "betano": "Betano",
+    "betfair": "Betfair Sportsbook",
+    "betfair sportsbook": "Betfair Sportsbook",
+    "novibet": "Novibet",
+    "superbet": "Superbet",
+}
+
+def canonical_bookmaker(name: str) -> str:
+    """Converte nome do bookmaker para formato canônico"""
+    if not name:
+        return ""
+    key = str(name).strip().lower()
+    return BOOKMAKER_ALIASES.get(key, name.strip())
+
+def is_supported_bookmaker(name: str) -> bool:
+    """Verifica se o bookmaker é suportado"""
+    return canonical_bookmaker(name) in BOOKMAKERS_ATIVOS
 
 # Configuração do banco de dados
 def get_database_path():
