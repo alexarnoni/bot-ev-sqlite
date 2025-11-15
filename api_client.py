@@ -20,7 +20,8 @@ class OddsAPI:
         print(f"✅ API Client inicializada (key: {self.api_key[:8]}...)")
         # Lista de bookmakers suportados pela integração atual
         self.allowed_bookmakers = [
-            'Bet365', 'Betfair Sportsbook', 'Novibet', 'Superbet', 'BetMGM', 'Betano'
+            'Bet365', 'Betfair Sportsbook', 'Novibet', 'Superbet', 'BetMGM', 'Betano',
+            'Betsson'
         ]
     
     def _check_rate_limit(self) -> bool:
