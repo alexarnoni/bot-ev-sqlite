@@ -5,27 +5,12 @@ import logging
 import pycountry
 from typing import Dict, List, Optional, Any
 from database import get_db
+from logging_config import get_general_logger, get_scan_logger, get_alerts_logger
 
-# Configuração de logging
-def setup_logger(name: str, level: str = "INFO") -> logging.Logger:
-    """Configura logger para um módulo"""
-    logger = logging.getLogger(name)
-    logger.setLevel(getattr(logging, level.upper()))
-    
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-    
-    return logger
-
-# Loggers globais
-logger_geral = setup_logger("bot_geral")
-logger_scan = setup_logger("bot_scan")
-logger_alertas = setup_logger("bot_alertas")
+# Loggers globais usando configuração centralizada com rotação e masking
+logger_geral = get_general_logger()
+logger_scan = get_scan_logger()
+logger_alertas = get_alerts_logger()
 
 # Catálogo de ligas por região
 LIGAS_POR_REGIAO = {

@@ -26,7 +26,23 @@ class Database:
         """Context manager para conexões com o banco"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        # PRAGMAs para estabilidade e desempenho em concorrência
         conn.execute("PRAGMA foreign_keys = ON")
+        # Modo WAL melhora concorrência entre leitores/escritores
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+        except Exception:
+            pass
+        # Reduz fsync agressivo mantendo segurança adequada para app
+        try:
+            conn.execute("PRAGMA synchronous=NORMAL")
+        except Exception:
+            pass
+        # Evita erros rápidos de lock sob concorrência
+        try:
+            conn.execute("PRAGMA busy_timeout=5000")
+        except Exception:
+            pass
         try:
             yield conn
             conn.commit()
@@ -138,6 +154,7 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     chat_id INTEGER NOT NULL,
                     data_envio TIMESTAMP NOT NULL,
+                    alert_hash TEXT,
                     esporte TEXT,
                     home TEXT,
                     away TEXT,
@@ -154,6 +171,15 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_chat ON alert_history(chat_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_date ON alert_history(data_envio)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_ev ON alert_history(ev)")
+            # Índice composto para ordenação por usuário+data e dedup por hash
+            try:
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_chat_time ON alert_history(chat_id, data_envio DESC)")
+            except Exception:
+                pass
+            try:
+                conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_history_chat_hash ON alert_history(chat_id, alert_hash)")
+            except Exception:
+                pass
             
             # 8. Tabela pending_alerts
             conn.execute("""
@@ -408,12 +434,13 @@ class Database:
         with self.get_connection() as conn:
             conn.execute("""
                 INSERT INTO alert_history 
-                (chat_id, data_envio, esporte, home, away, mercado, 
+                (chat_id, data_envio, alert_hash, esporte, home, away, mercado, 
                  odd, stake, ev, data_jogo, url_bet, bookmaker)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 chat_id,
                 kwargs.get('data_envio'),
+                kwargs.get('alert_hash'),
                 kwargs.get('esporte'),
                 kwargs.get('home'),
                 kwargs.get('away'),
@@ -578,6 +605,22 @@ class Database:
                 WHERE request_timestamp < datetime('now', '-2 hours')
             """)
     
+    def clean_old_history(self, days: int = 90):
+        """Limpa histórico de alertas antigos"""
+        with self.get_connection() as conn:
+            conn.execute("""
+                DELETE FROM alert_history 
+                WHERE data_envio < datetime('now', '-' || ? || ' days')
+            """, (days,))
+    
+    def clean_old_pending_alerts(self, hours: int = 24):
+        """Limpa alertas pendentes antigos"""
+        with self.get_connection() as conn:
+            conn.execute("""
+                DELETE FROM pending_alerts 
+                WHERE created_at < datetime('now', '-' || ? || ' hours')
+            """, (hours,))
+    
     # === ADMIN ===
     def get_all_users(self) -> List[Dict]:
         """Retorna todos os usuários ativos com estatísticas"""
@@ -675,7 +718,20 @@ class SQLiteConnectionPool:
                         timeout=self.config.timeout
                     )
                     conn.row_factory = aiosqlite.Row
+                    # PRAGMAs para conexões assíncronas
                     await conn.execute("PRAGMA foreign_keys = ON")
+                    try:
+                        await conn.execute("PRAGMA journal_mode=WAL")
+                    except Exception:
+                        pass
+                    try:
+                        await conn.execute("PRAGMA synchronous=NORMAL")
+                    except Exception:
+                        pass
+                    try:
+                        await conn.execute("PRAGMA busy_timeout=5000")
+                    except Exception:
+                        pass
                     self._created_connections += 1
                     return conn
                 else:

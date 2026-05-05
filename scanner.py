@@ -7,15 +7,21 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 from api_client import OddsAPI
+from scan_cache import get_snapshot_cache
 from database import SQLiteConnectionPool, SQLiteConnectionConfig
 from filtros import evento_valido, aplicar_filtros_dinamicos, validar_filtros_usuario
 from rate_limiter import api_rate_limiter
+from rate_limiter_global import get_global_rate_limiter
 from status import get_odds_api_status
 from utils import carregar_catalogo_ligas
 from bot_ev import enviar_alertas_batch, enviar_alerta_instantaneo
 from bot_core import definir_stake
 from cache import get_cache
 from config import FEED_ID
+from messages import (
+    api_offline, global_rate_limit, scan_rate_limit, 
+    no_events, user_not_found, snapshot_expired, high_ev_alert
+)
 import os
 
 # Configuração do banco de dados
@@ -46,12 +52,20 @@ async def scan_apostas():
         # Verifica status da API
         if not await get_odds_api_status():
             logger.warning("⚠️ API offline, pulando scan")
-            return "⚠️ API offline"
+            return api_offline()
         
-        # Verifica rate limit
+        # Verifica rate limit GLOBAL primeiro (sincrono)
+        try:
+            if not get_global_rate_limiter().can_make_request():
+                logger.warning("⚠️ Rate limit global atingido, pulando scan")
+                return global_rate_limit()
+        except Exception:
+            pass
+
+        # Verifica rate limit local/por feed (async)
         if not await api_rate_limiter.can_make_request():
             logger.warning("⚠️ Rate limit atingido, pulando scan")
-            return "⚠️ Rate limit atingido"
+            return scan_rate_limit()
         
         # Busca usuários ativos
         usuarios_ativos = await _buscar_usuarios_ativos()
@@ -63,7 +77,7 @@ async def scan_apostas():
         apostas = await _buscar_apostas_api(usuarios_ativos)
         if not apostas:
             logger.info("📭 Nenhuma aposta encontrada na API")
-            return "📭 Nenhuma aposta encontrada"
+            return no_events()
         
         # Processa apostas para cada usuário com momento de scan consistente
         total_alertas = 0
@@ -92,24 +106,41 @@ async def scan_apostas_usuario(chat_id: str):
         # Verifica status da API
         if not await get_odds_api_status():
             logger.warning("⚠️ API offline, pulando scan")
-            return "⚠️ API offline"
+            return api_offline()
         
-        # Verifica rate limit
+        # Verifica rate limit GLOBAL primeiro
+        try:
+            if not get_global_rate_limiter().can_make_request():
+                logger.warning("⚠️ Rate limit global atingido, pulando scan")
+                return global_rate_limit()
+        except Exception:
+            pass
+
+        # Verifica rate limit local/por feed
         if not await api_rate_limiter.can_make_request():
             logger.warning("⚠️ Rate limit atingido, pulando scan")
-            return "⚠️ Rate limit atingido"
+            return scan_rate_limit()
         
         # Busca dados do usuário específico
         usuario = await _buscar_usuario_especifico(chat_id)
         if not usuario:
             logger.info(f"📭 Usuário {chat_id} não encontrado ou inativo")
-            return "📭 Usuário não encontrado ou inativo"
-        
-        # Busca apostas da API com base nos bookmakers do usuário
-        apostas = await _buscar_apostas_api([usuario])
+            return user_not_found()
+
+        # Tenta usar snapshot recente do scan global
+        snapshot_cache = get_snapshot_cache()
+        required_bookmakers = usuario.get('bookmakers') or []
+        snapshot = snapshot_cache.get_snapshot(max_age_seconds=120, required_bookmakers=required_bookmakers)
+
+        if snapshot is not None:
+            apostas = snapshot.get('eventos') or []
+            logger.info("🧠 /scan usando snapshot global recente (sem chamada à API)")
+        else:
+            # Busca apostas da API com base nos bookmakers do usuário
+            apostas = await _buscar_apostas_api([usuario])
         if not apostas:
             logger.info("📭 Nenhuma aposta encontrada na API")
-            return "📭 Nenhuma aposta encontrada"
+            return no_events()
         
         # Processa apostas para o usuário específico
         alertas_usuario = await _processar_apostas_usuario(usuario, apostas, momento_scan)
@@ -365,7 +396,7 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
                 # EV+ 10% = instantâneo
                 if ev >= 0.10:  # 10% em decimal
                     alertas_instantaneos.append((evento, stake))
-                    logger.info(f"🚨 Alerta de alta prioridade detectado para {chat_id}: EV {ev:.2%}")
+                    logger.info(high_ev_alert(ev))
                 else:
                     alertas_normais.append((evento, stake))
         
@@ -447,13 +478,18 @@ async def _salvar_no_historico(chat_id: int, aposta: Dict[str, Any]):
     Salva alerta no histórico
     """
     try:
+        # Gera hash consistente com banco
+        from database import generate_alert_hash
+        alert_hash = generate_alert_hash(aposta)
+
         async with db_pool.get_connection() as conn:
             await conn.execute("""
                 INSERT INTO alert_history 
-                (chat_id, data_envio, esporte, home, away, mercado, odd, stake, ev, data_jogo, url_bet, bookmaker)
-                VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (chat_id, data_envio, alert_hash, esporte, home, away, mercado, odd, stake, ev, data_jogo, url_bet, bookmaker)
+                VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 chat_id,
+                alert_hash,
                 aposta.get('sport', ''),
                 aposta.get('home', ''),
                 aposta.get('away', ''),

@@ -263,4 +263,4 @@ Este projeto está sob a licença MIT. Veja o arquivo LICENSE para detalhes.
 
 ---
 
-**Bot EV+ v2.0** - Sistema de alertas de apostas com valor positivo
+**Bot EV+ v3.0** - Sistema de alertas de apostas com valor positivo

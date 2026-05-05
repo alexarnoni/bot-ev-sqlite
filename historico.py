@@ -3,7 +3,7 @@ Sistema de histórico de alertas
 """
 from datetime import datetime
 from typing import List, Dict
-from database import get_db
+from database import get_db, generate_alert_hash
 
 class AlertHistory:
     def __init__(self):
@@ -15,6 +15,7 @@ class AlertHistory:
             # Formata dados do evento
             data_envio = datetime.now().strftime("%d/%m/%Y %H:%M")
             data_jogo = evento.get("commence_time", "")
+            alert_hash = generate_alert_hash(evento)
             
             # Converte data do jogo se necessário
             if data_jogo and 'T' in data_jogo:
@@ -34,6 +35,7 @@ class AlertHistory:
             self.db.add_alert_history(
                 chat_id=chat_id,
                 data_envio=data_envio,
+                alert_hash=alert_hash,
                 esporte=evento.get("sport", ""),
                 home=evento.get("home", ""),
                 away=evento.get("away", ""),

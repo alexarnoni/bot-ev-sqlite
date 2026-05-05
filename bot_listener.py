@@ -22,21 +22,12 @@ from scanner import scan_apostas_usuario
 from scanner import scan_apostas
 from status import get_odds_api_status
 from utils import carregar_catalogo_ligas, TRADUCAO_ESPORTE_EN
+from logging_config import get_logger
 
 BOOKMAKERS_POR_PAGINA = 30
 
-# Configurar logging (arquivo + terminal)
-LISTENER_LOG_PATH = get_listener_log_path()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    handlers=[
-        logging.FileHandler(LISTENER_LOG_PATH, encoding="utf-8"),
-        logging.StreamHandler()
-    ]
-)
-logging.info("🔊 bot_listener.py iniciado.")
+# Configurar logging centralizado com rotação e masking
+logger = get_logger("bot_listener")
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -52,7 +43,7 @@ def _fetch_alert_history(chat_id: str) -> list[dict[str, object]]:
     try:
         history = db.get_user_history(int(chat_id))
     except Exception as exc:
-        logging.error("Erro ao carregar histórico do chat %s: %s", chat_id, exc)
+        logger.error("Erro ao carregar histórico do chat %s: %s", chat_id, exc)
         return []
 
     alertas: list[dict[str, object]] = []
@@ -85,7 +76,7 @@ def _count_user_alerts(chat_id: str) -> int:
     try:
         return db.count_user_alerts(int(chat_id))
     except Exception as exc:
-        logging.error("Erro ao contar alertas do chat %s: %s", chat_id, exc)
+        logger.error("Erro ao contar alertas do chat %s: %s", chat_id, exc)
         return 0
 
 
@@ -93,7 +84,7 @@ def _count_alerts_on_date(target_date: datetime.date) -> int:
     try:
         return db.count_alerts_on_date(target_date)
     except Exception as exc:
-        logging.error("Erro ao contar alertas do dia %s: %s", target_date, exc)
+        logger.error("Erro ao contar alertas do dia %s: %s", target_date, exc)
         return 0
 
 
@@ -101,7 +92,7 @@ def _count_api_cache_entries() -> int:
     try:
         return db.count_api_cache_entries()
     except Exception as exc:
-        logging.error("Erro ao consultar quantidade de cache: %s", exc)
+        logger.error("Erro ao consultar quantidade de cache: %s", exc)
         return 0
 
 def is_admin(chat_id):
@@ -162,16 +153,16 @@ def migrar_banco_legado_se_preciso():
                     horario_fim=filtros.get("horario_fim"),
                 )
                 migrated += 1
-        logging.info(f"✅ Migração de banco legado concluída: {migrated} usuários migrados")
+        logger.info(f"✅ Migração de banco legado concluída: {migrated} usuários migrados")
         return migrated
     except Exception as exc:
-        logging.error(f"❌ Erro na migração do banco legado: {exc}")
+        logger.error(f"❌ Erro na migração do banco legado: {exc}")
         return 0
 
 # ----- Carregar filtros diretamente do banco normalizado -----
 def carregar_filtros_startup():
     """Carrega filtros a partir do schema normalizado"""
-    logging.info("🔍 Carregamento de filtros do banco normalizado...")
+    logger.info("🔍 Carregamento de filtros do banco normalizado...")
     try:
         filtros: dict[str, dict] = {}
         # Reconstroi por usuário usando helper completo
@@ -187,12 +178,12 @@ def carregar_filtros_startup():
                 if completo:
                     filtros[chat_id] = completo
             else:
-                logging.info(f"🚫 Usuário {chat_id} está bloqueado, não carregando filtros")
+                logger.info(f"🚫 Usuário {chat_id} está bloqueado, não carregando filtros")
                 
-        logging.info(f"✅ {len(filtros)} filtros carregados do banco normalizado")
+        logger.info(f"✅ {len(filtros)} filtros carregados do banco normalizado")
         return filtros
     except Exception as exc:
-        logging.error(f"❌ Erro no carregamento: {exc}")
+        logger.error(f"❌ Erro no carregamento: {exc}")
         return {}
 
 # Primeiro, tentar migrar banco legado, se aplicável
@@ -234,11 +225,11 @@ def salvar_filtros():
                 horario_inicio=filtros.get("horario_inicio"),
                 horario_fim=filtros.get("horario_fim"),
             )
-        logging.info(f"💾 {len(filtros_por_chat)} filtros salvos no banco normalizado")
+        logger.info(f"💾 {len(filtros_por_chat)} filtros salvos no banco normalizado")
     except Exception as exc:
-        logging.error(f"❌ Erro ao salvar filtros: {exc}")
+        logger.error(f"❌ Erro ao salvar filtros: {exc}")
         import traceback
-        logging.error(f"Stack: {traceback.format_exc()}")
+        logger.error(f"Stack: {traceback.format_exc()}")
 
 # 🔄 MIGRAÇÃO AUTOMÁTICA DE USUÁRIOS LEGADOS
 def migrar_usuarios_legados():

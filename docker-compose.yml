@@ -1,0 +1,176 @@
+version: '3.8'
+
+services:
+  # Scanner Global Único
+  global-scanner:
+    build: .
+    container_name: bot-ev-global-scanner
+    environment:
+      - FEED_ID=global
+      - ODDS_API_KEY=${ODDS_API_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    command: ["scanner"]
+    restart: unless-stopped
+    networks:
+      - bot-network
+
+  # Feed Default
+  feed-default:
+    build: .
+    container_name: bot-ev-feed-default
+    environment:
+      - FEED_ID=default
+      - ODDS_API_KEY=${ODDS_API_KEY}
+      - BOT_TOKEN_DEFAULT=${BOT_TOKEN_DEFAULT}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    command: ["feed", "default"]
+    restart: unless-stopped
+    depends_on:
+      - global-scanner
+    networks:
+      - bot-network
+
+  # Feed 1
+  feed-1:
+    build: .
+    container_name: bot-ev-feed-1
+    environment:
+      - FEED_ID=feed1
+      - ODDS_API_KEY=${ODDS_API_KEY}
+      - BOT_TOKEN_FEED1=${BOT_TOKEN_FEED1}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    command: ["feed", "feed1"]
+    restart: unless-stopped
+    depends_on:
+      - global-scanner
+    networks:
+      - bot-network
+
+  # Feed 2
+  feed-2:
+    build: .
+    container_name: bot-ev-feed-2
+    environment:
+      - FEED_ID=feed2
+      - ODDS_API_KEY=${ODDS_API_KEY}
+      - BOT_TOKEN_FEED2=${BOT_TOKEN_FEED2}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    command: ["feed", "feed2"]
+    restart: unless-stopped
+    depends_on:
+      - global-scanner
+    networks:
+      - bot-network
+
+  # Feed 3
+  feed-3:
+    build: .
+    container_name: bot-ev-feed-3
+    environment:
+      - FEED_ID=feed3
+      - ODDS_API_KEY=${ODDS_API_KEY}
+      - BOT_TOKEN_FEED3=${BOT_TOKEN_FEED3}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    command: ["feed", "feed3"]
+    restart: unless-stopped
+    depends_on:
+      - global-scanner
+    networks:
+      - bot-network
+
+  # Feed 4
+  feed-4:
+    build: .
+    container_name: bot-ev-feed-4
+    environment:
+      - FEED_ID=feed4
+      - ODDS_API_KEY=${ODDS_API_KEY}
+      - BOT_TOKEN_FEED4=${BOT_TOKEN_FEED4}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    command: ["feed", "feed4"]
+    restart: unless-stopped
+    depends_on:
+      - global-scanner
+    networks:
+      - bot-network
+
+  # Feed American Sports (NFL, NBA, MLB, NHL)
+  feed-american:
+    build: .
+    container_name: bot-ev-feed-american
+    environment:
+      - FEED_ID=feed_american
+      - ODDS_API_KEY=${ODDS_API_KEY}
+      - BOT_TOKEN_FEED_AMERICAN=${BOT_TOKEN_FEED_AMERICAN}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    command: ["feed", "feed_american"]
+    restart: unless-stopped
+    depends_on:
+      - global-scanner
+    networks:
+      - bot-network
+
+  # Dashboard Web (opcional)
+  dashboard:
+    build: .
+    container_name: bot-ev-dashboard
+    environment:
+      - FEED_ID=dashboard
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    ports:
+      - "8080:8080"
+    command: ["python", "web_dashboard.py"]
+    restart: unless-stopped
+    depends_on:
+      - global-scanner
+    networks:
+      - bot-network
+
+  # Métricas Viewer (opcional)
+  metrics:
+    build: .
+    container_name: bot-ev-metrics
+    environment:
+      - FEED_ID=metrics
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    command: ["python", "metrics_viewer.py", "monitor", "60"]
+    restart: unless-stopped
+    depends_on:
+      - global-scanner
+    networks:
+      - bot-network
+
+networks:
+  bot-network:
+    driver: bridge
+
+volumes:
+  data:
+  logs:

@@ -1,5 +1,6 @@
 """
-Scheduler principal do Bot EV+ com job fixo de 2 minutos
+Scheduler principal do Bot EV+ - Processa usuários usando cache global
+Agora apenas processa usuários do feed atual usando snapshot global compartilhado
 """
 import asyncio
 import time
@@ -11,7 +12,6 @@ from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
 from config import MAX_CONCURRENT_SCANS, FEED_ID
 from database import get_db
-from api_client import OddsAPIClient
 from usuarios import get_user_manager
 from cache import get_cache
 from historico import get_history
@@ -22,17 +22,21 @@ from filtros import evento_valido, aplicar_filtros_dinamicos, validar_filtros_us
 from bot_core import definir_stake
 from bot_ev import enviar_alertas_batch
 from utils import logger_geral, logger_scan, update_league_catalog, LIGAS_POR_REGIAO
+from scan_cache import get_snapshot_cache
+from messages import no_events
+from metrics import record_alert_processing, measure_time, get_metrics_summary
 
 class BotScheduler:
     def __init__(self):
-        self.scheduler = AsyncIOScheduler()
-        self.api_client = OddsAPIClient()
+        # Usa o event loop atual para jobs assíncronos
+        self.scheduler = AsyncIOScheduler(event_loop=asyncio.get_event_loop())
         self.user_manager = get_user_manager()
         self.cache = get_cache()
         self.history = get_history()
         self.status = get_status()
         self.db = get_db()
         self.rate_limiter = get_rate_limiter()
+        self.snapshot_cache = get_snapshot_cache()
         
         # Semáforo para controlar concorrência
         self.scan_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SCANS)
@@ -40,37 +44,36 @@ class BotScheduler:
         # Estatísticas
         self.stats = {
             'total_scans': 0,
-            'total_eventos': 0,
             'total_alertas': 0,
             'ultimo_scan': None,
-            'erros_api': 0
+            'erros_cache': 0
         }
     
     def start(self):
-        """Inicia o scheduler com todos os jobs"""
-        logger_geral.info("🚀 Configurando jobs do scheduler...")
+        """Inicia o scheduler com jobs de processamento"""
+        logger_geral.info(f"🚀 Configurando scheduler do feed {FEED_ID}...")
         
-        # JOB PRINCIPAL: SCAN A CADA 2 MINUTOS (FIXO)
+        # JOB PRINCIPAL: PROCESSAR USUÁRIOS A CADA 2 MINUTOS (usando cache global)
         self.scheduler.add_job(
-            self.main_scan_job,
+            self.process_users_job,
             IntervalTrigger(minutes=2),  # ← SEMPRE 2 MINUTOS
-            id='main_scan',
+            id='process_users',
             max_instances=1,
             replace_existing=True
         )
         
-        # Limpeza a cada hora
+        # Limpeza a cada hora (cache e rate limiter)
         self.scheduler.add_job(
             self.cleanup_job,
             CronTrigger(minute=0),
-            id='cleanup'
+            id='cleanup_hourly'
         )
         
-        # Limpeza do banco (3h da manhã)
+        # Limpeza do banco (3h da manhã) - histórico e pendentes
         self.scheduler.add_job(
             self.cleanup_database_job,
             CronTrigger(hour=3),
-            id='cleanup_db'
+            id='cleanup_daily'
         )
         
         # Estatísticas a cada 30 minutos
@@ -82,23 +85,38 @@ class BotScheduler:
         
         # Inicia o scheduler
         self.scheduler.start()
-        logger_geral.info("✅ Scheduler iniciado (scan 2min fixo)")
+        logger_geral.info(f"✅ Scheduler do feed {FEED_ID} iniciado (processamento a cada 2min)")
         
         # Log dos jobs ativos
         for job in self.scheduler.get_jobs():
             logger_geral.info(f"📅 Job ativo: {job.id} - {job.trigger}")
     
-    async def main_scan_job(self):
-        """Job principal de scan - executa a cada 2 minutos"""
+    @measure_time('feed_processing')
+    async def process_users_job(self):
+        """Job principal de processamento - executa a cada 2 minutos usando cache global"""
         async with self.scan_semaphore:
             try:
-                logger_scan.info("🔍 Iniciando scan principal...")
+                logger_scan.info(f"👥 Iniciando processamento do feed {FEED_ID}...")
                 start_time = time.time()
                 
-                # Calcula momento do scan uma vez para consistência
-                momento_scan = datetime.now(timezone.utc)
+                # Calcula momento do processamento uma vez para consistência
+                momento_processamento = datetime.now(timezone.utc)
                 
-                # Busca usuários configurados
+                # Busca snapshot global compartilhado
+                snapshot = self.snapshot_cache.get_snapshot(max_age_seconds=300)  # 5 minutos de tolerância
+                if not snapshot:
+                    logger_scan.warning("⚠️ Snapshot global não disponível ou expirado")
+                    self.stats['erros_cache'] += 1
+                    return
+                
+                todos_eventos = snapshot.get('eventos', [])
+                if not todos_eventos:
+                    logger_scan.info("📭 Nenhum evento no snapshot global")
+                    return
+                
+                logger_scan.info(f"📊 Usando snapshot global com {len(todos_eventos)} eventos")
+                
+                # Busca usuários configurados do feed atual
                 usuarios = self.user_manager.get_all_users()
                 usuarios_configurados = [
                     user for user in usuarios 
@@ -106,42 +124,16 @@ class BotScheduler:
                 ]
                 
                 if not usuarios_configurados:
-                    logger_scan.info("⚠️ Nenhum usuário configurado encontrado")
+                    logger_scan.info(f"⚠️ Nenhum usuário configurado no feed {FEED_ID}")
                     return
                 
-                logger_scan.info(f"👥 {len(usuarios_configurados)} usuários configurados")
+                logger_scan.info(f"👥 {len(usuarios_configurados)} usuários configurados no feed {FEED_ID}")
                 
-                # Coleta bookmakers únicos
-                bookmakers_unicos = set()
-                for user in usuarios_configurados:
-                    user_bookmakers = self.user_manager.get_user_bookmakers(user['chat_id'])
-                    bookmakers_unicos.update(user_bookmakers)
-                
-                if not bookmakers_unicos:
-                    logger_scan.info("⚠️ Nenhum bookmaker configurado")
-                    return
-                
-                logger_scan.info(f"📚 {len(bookmakers_unicos)} bookmakers únicos: {list(bookmakers_unicos)}")
-                
-                # Busca eventos para cada bookmaker
-                todos_eventos = []
-                for bookmaker in bookmakers_unicos:
-                    try:
-                        eventos = await self.api_client.get_eventos_geral(bookmaker)
-                        todos_eventos.extend(eventos)
-                        logger_scan.info(f"📊 {bookmaker}: {len(eventos)} eventos")
-                    except Exception as e:
-                        logger_scan.error(f"❌ Erro ao buscar eventos para {bookmaker}: {e}")
-                        self.stats['erros_api'] += 1
-                
-                logger_scan.info(f"📈 Total de eventos coletados: {len(todos_eventos)}")
-                self.stats['total_eventos'] += len(todos_eventos)
-                
-                # Processa eventos para cada usuário com momento de scan consistente
+                # Processa eventos para cada usuário do feed atual
                 total_alertas = 0
                 for user in usuarios_configurados:
                     try:
-                        alertas_enviados = await self._processar_usuario(user, todos_eventos, momento_scan)
+                        alertas_enviados = await self._processar_usuario(user, todos_eventos, momento_processamento)
                         total_alertas += alertas_enviados
                     except Exception as e:
                         logger_scan.error(f"❌ Erro ao processar usuário {user['chat_id']}: {e}")
@@ -156,15 +148,18 @@ class BotScheduler:
                 
                 # Log final
                 elapsed = time.time() - start_time
-                logger_scan.info(f"✅ Scan concluído em {elapsed:.2f}s - {total_alertas} alertas enviados")
+                logger_scan.info(f"✅ Processamento do feed {FEED_ID} concluído em {elapsed:.2f}s - {total_alertas} alertas enviados")
                 
-                # Atualiza status da API
-                self.db.set_api_status(True, "API funcionando normalmente")
+                # Registra métricas de processamento
+                record_alert_processing(elapsed, total_alertas, True)
+                
+                # Atualiza status do sistema
+                self.db.set_api_status(True, f"Feed {FEED_ID} funcionando normalmente")
                 
             except Exception as e:
-                logger_scan.error(f"❌ Erro no scan principal: {e}")
-                self.db.set_api_status(False, "Erro no scan", str(e))
-                self.stats['erros_api'] += 1
+                logger_scan.error(f"❌ Erro no processamento do feed {FEED_ID}: {e}")
+                self.db.set_api_status(False, f"Erro no feed {FEED_ID}", str(e))
+                self.stats['erros_cache'] += 1
     
     async def _processar_usuario(self, user: dict, todos_eventos: list, momento_scan: datetime = None) -> int:
         """Processa eventos para um usuário específico"""
@@ -263,36 +258,42 @@ class BotScheduler:
         return alertas_enviados
     
     async def cleanup_job(self):
-        """Job de limpeza a cada hora"""
+        """Job de limpeza a cada hora - cache e rate limiter"""
         try:
-            logger_geral.info("🧹 Iniciando limpeza...")
+            logger_geral.info("🧹 Iniciando limpeza horária...")
             
-            # Limpa cache antigo
-            self.cache.clean_old_cache(30)
-            
-            # Limpa logs de rate limiting
-            self.rate_limiter.clean_old_logs()
-            
-            logger_geral.info("✅ Limpeza concluída")
-            
-        except Exception as e:
-            logger_geral.error(f"❌ Erro na limpeza: {e}")
-    
-    async def cleanup_database_job(self):
-        """Job de limpeza do banco às 3h da manhã"""
-        try:
-            logger_geral.info("🗄️ Iniciando limpeza do banco...")
-            
-            # Limpa cache antigo
+            # Limpa cache antigo (> 7 dias)
             self.cache.clean_old_cache(7)
             
-            # Limpa logs de rate limiting antigos
+            # Limpa logs de rate limiting (> 2 horas)
             self.rate_limiter.clean_old_logs()
             
-            logger_geral.info("✅ Limpeza do banco concluída")
+            logger_geral.info("✅ Limpeza horária concluída")
             
         except Exception as e:
-            logger_geral.error(f"❌ Erro na limpeza do banco: {e}")
+            logger_geral.error(f"❌ Erro na limpeza horária: {e}")
+    
+    async def cleanup_database_job(self):
+        """Job de limpeza do banco às 3h da manhã - histórico e pendentes"""
+        try:
+            logger_geral.info("🗄️ Iniciando limpeza diária do banco...")
+            
+            # Limpa histórico antigo (> 90 dias)
+            self.db.clean_old_history(90)
+            
+            # Limpa alertas pendentes antigos (> 24 horas)
+            self.db.clean_old_pending_alerts(24)
+            
+            # Limpa cache antigo (> 7 dias)
+            self.cache.clean_old_cache(7)
+            
+            # Limpa logs de rate limiting antigos (> 2 horas)
+            self.rate_limiter.clean_old_logs()
+            
+            logger_geral.info("✅ Limpeza diária do banco concluída")
+            
+        except Exception as e:
+            logger_geral.error(f"❌ Erro na limpeza diária do banco: {e}")
     
     async def stats_job(self):
         """Job de estatísticas a cada 30 minutos"""
@@ -315,9 +316,8 @@ class BotScheduler:
         """Retorna estatísticas do scheduler"""
         return {
             **self.stats,
-            'usuarios_ativos': len(self.user_manager.get_all_users()),
-            'api_healthy': self.status.is_api_healthy(),
-            'rate_limit_info': self.rate_limiter.get_rate_limit_info()
+            'feed_id': FEED_ID,
+            'usuarios_ativos': len(self.user_manager.get_all_users())
         }
     
     def stop(self):
@@ -332,7 +332,7 @@ async def main():
     
     try:
         scheduler.start()
-        logger_geral.info(f"🤖 Bot EV+ iniciado (Feed: {FEED_ID})")
+        logger_geral.info(f"🤖 Bot EV+ Feed {FEED_ID} iniciado")
         
         # Mantém o scheduler rodando
         while True:
