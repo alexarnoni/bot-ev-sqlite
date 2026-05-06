@@ -239,6 +239,50 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # 13. Tabela bets_placed — tracking de apostas
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS bets_placed (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    alert_hash TEXT NOT NULL UNIQUE,
+                    chat_id TEXT NOT NULL,
+                    feed_id TEXT NOT NULL,
+                    home TEXT,
+                    away TEXT,
+                    league TEXT,
+                    sport TEXT,
+                    market_type TEXT,
+                    bet_side TEXT,
+                    bookmaker TEXT,
+                    odd_alerta REAL,
+                    ev_alerta REAL,
+                    commence_time TEXT,
+                    commence_time_ajustado TEXT DEFAULT NULL,
+                    valor_apostado REAL DEFAULT NULL,
+                    status TEXT DEFAULT 'pendente' CHECK(status IN ('pendente', 'ganhou', 'perdeu', 'empate', 'cashout', 'pulei', 'expirado')),
+                    valor_cashout REAL DEFAULT NULL,
+                    lucro REAL DEFAULT NULL,
+                    tentativas_lembrete INTEGER DEFAULT 0,
+                    timestamp_alerta TEXT,
+                    timestamp_apostou TEXT,
+                    timestamp_resultado TEXT,
+                    timestamp_lembrete_enviado TEXT
+                )
+            """)
+            # Migration: adicionar colunas para bancos existentes
+            try:
+                conn.execute("ALTER TABLE bets_placed ADD COLUMN commence_time_ajustado TEXT DEFAULT NULL")
+            except Exception:
+                pass  # Coluna já existe
+            try:
+                conn.execute("ALTER TABLE bets_placed ADD COLUMN tentativas_lembrete INTEGER DEFAULT 0")
+            except Exception:
+                pass  # Coluna já existe
+
+            # Índices para bets_placed
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_bets_chat ON bets_placed(chat_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_bets_status ON bets_placed(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_bets_pending_reminder ON bets_placed(status, commence_time, timestamp_lembrete_enviado)")
     
     # === USERS ===
     def create_or_update_user(self, chat_id: int, nome: str = None, username: str = None):

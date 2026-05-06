@@ -65,3 +65,5 @@ backup_*/
 # Temporary files
 *.tmp
 *.temp
+
+.venv/

@@ -23,6 +23,8 @@ from scanner import scan_apostas
 from status import get_odds_api_status
 from utils import carregar_catalogo_ligas, TRADUCAO_ESPORTE_EN
 from logging_config import get_logger
+from bets_tracker import BetsTracker, StatusFinalError, STATUSES_FINAIS
+import re
 
 BOOKMAKERS_POR_PAGINA = 30
 
@@ -37,6 +39,7 @@ from config import ADMIN_USERS
 ADMIN_CHAT_ID = str(ADMIN_USERS[0]) if ADMIN_USERS else None
 
 db = get_db()
+bets_tracker = BetsTracker(db)
 
 
 def _fetch_alert_history(chat_id: str) -> list[dict[str, object]]:
@@ -2225,6 +2228,10 @@ async def ev_custom_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def capturar_input_manual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # === BET TRACKING: interceptar valor de aposta ou cashout ===
+    if context.user_data.get("esperando_valor_aposta") or context.user_data.get("esperando_valor_cashout"):
+        return await _processar_valor_bet_tracking(update, context)
+
     # NOVO: Verificar se está em setup
     if context.user_data.get("setup_esperando_ev"):
         return await processar_setup_ev_manual(update, context)
@@ -2949,6 +2956,428 @@ async def stats_handler(update, context):
 async def fallback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❓ Comando não reconhecido. Digite /ajuda para ver as opções disponíveis.")
 
+
+# ===== BET TRACKING: Callbacks e handlers =====
+
+# Regex para validação monetária: inteiro ou decimal com 1-2 casas
+_VALOR_REGEX = re.compile(r"^\d+([.,]\d{1,2})?$")
+
+
+def _validar_valor_monetario(texto: str) -> float | None:
+    """Valida e converte valor monetário. Retorna float ou None se inválido."""
+    texto = texto.strip()
+    if not _VALOR_REGEX.match(texto):
+        return None
+    valor = float(texto.replace(',', '.'))
+    if valor <= 0:
+        return None
+    return valor
+
+
+async def _processar_valor_bet_tracking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Processa texto quando esperando valor de aposta ou cashout."""
+    texto = update.message.text.strip()
+
+    # Determina qual fluxo está ativo
+    bet_id_aposta = context.user_data.get("esperando_valor_aposta")
+    bet_id_cashout = context.user_data.get("esperando_valor_cashout")
+
+    if bet_id_aposta:
+        valor = _validar_valor_monetario(texto)
+        if valor is None:
+            await update.message.reply_text(
+                "❌ Valor inválido. Envie um número válido (ex: <code>50</code>, <code>25,50</code>, <code>100.5</code>)",
+                parse_mode="HTML"
+            )
+            return
+
+        try:
+            bets_tracker.marcar_apostou(bet_id_aposta, valor)
+        except StatusFinalError:
+            await update.message.reply_text("⚠️ Esta aposta já foi registrada.")
+            context.user_data.pop("esperando_valor_aposta", None)
+            return
+
+        context.user_data.pop("esperando_valor_aposta", None)
+
+        # Tenta editar a mensagem original para adicionar confirmação
+        msg_id = context.user_data.pop("bet_msg_id", None)
+        if msg_id:
+            try:
+                chat_id = update.effective_chat.id
+                # Busca texto atual e adiciona confirmação
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=msg_id,
+                    text=f"💰 Apostado: R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass  # Se não conseguir editar, segue em frente
+
+        await update.message.reply_text(
+            f"✅ Aposta registrada: <b>R$ {valor:,.2f}</b>".replace(',', 'X').replace('.', ',').replace('X', '.'),
+            parse_mode="HTML"
+        )
+
+    elif bet_id_cashout:
+        valor = _validar_valor_monetario(texto)
+        if valor is None:
+            await update.message.reply_text(
+                "❌ Valor inválido. Envie o valor do cashout (ex: <code>80</code>, <code>45,50</code>)",
+                parse_mode="HTML"
+            )
+            return
+
+        try:
+            bets_tracker.marcar_resultado(bet_id_cashout, 'cashout', valor_cashout=valor)
+        except StatusFinalError:
+            await update.message.reply_text("⚠️ Esta aposta já foi registrada.")
+            context.user_data.pop("esperando_valor_cashout", None)
+            return
+
+        context.user_data.pop("esperando_valor_cashout", None)
+
+        msg_id = context.user_data.pop("bet_cashout_msg_id", None)
+        if msg_id:
+            try:
+                chat_id = update.effective_chat.id
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=msg_id,
+                    text=f"💸 Cashout: R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+
+        await update.message.reply_text(
+            f"✅ Cashout registrado: <b>R$ {valor:,.2f}</b>".replace(',', 'X').replace('.', ',').replace('X', '.'),
+            parse_mode="HTML"
+        )
+
+
+async def bet_yes_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: usuário clicou '✅ Apostei'"""
+    query = update.callback_query
+    await query.answer()
+
+    bet_id = int(query.data.split(":")[1])
+
+    # Verifica idempotência
+    status = bets_tracker.get_bet_status(bet_id)
+    if status is None:
+        await query.answer("Aposta não encontrada", show_alert=True)
+        return
+    if status in STATUSES_FINAIS:
+        await query.answer("Esta aposta já foi registrada", show_alert=True)
+        return
+
+    # Edita mensagem removendo botões
+    try:
+        texto_original = query.message.text_html or query.message.text or ""
+        await query.edit_message_text(
+            text=texto_original + "\n\n⏳ Aguardando valor da aposta...",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+    # Armazena estado para capturar próximo texto
+    context.user_data["esperando_valor_aposta"] = bet_id
+    context.user_data["bet_msg_id"] = query.message.message_id
+
+
+async def bet_no_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: usuário clicou '❌ Pulei'"""
+    query = update.callback_query
+    await query.answer()
+
+    bet_id = int(query.data.split(":")[1])
+
+    # Verifica idempotência
+    status = bets_tracker.get_bet_status(bet_id)
+    if status is None:
+        await query.answer("Aposta não encontrada", show_alert=True)
+        return
+    if status in STATUSES_FINAIS:
+        await query.answer("Esta aposta já foi registrada", show_alert=True)
+        return
+
+    # Marca como pulei
+    try:
+        bets_tracker.marcar_pulei(bet_id)
+    except StatusFinalError:
+        await query.answer("Esta aposta já foi registrada", show_alert=True)
+        return
+
+    # Edita mensagem
+    try:
+        texto_original = query.message.text_html or query.message.text or ""
+        await query.edit_message_text(
+            text=texto_original + "\n\n❌ Pulado",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+
+async def bet_result_win_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: usuário clicou '🟢 Ganhei'"""
+    query = update.callback_query
+    await query.answer()
+
+    bet_id = int(query.data.split(":")[1])
+
+    status = bets_tracker.get_bet_status(bet_id)
+    if status is None:
+        await query.answer("Aposta não encontrada", show_alert=True)
+        return
+    if status in STATUSES_FINAIS:
+        await query.answer("Esta aposta já foi registrada", show_alert=True)
+        return
+
+    try:
+        bets_tracker.marcar_resultado(bet_id, 'ganhou')
+    except StatusFinalError:
+        await query.answer("Esta aposta já foi registrada", show_alert=True)
+        return
+
+    # Busca lucro para exibir
+    with db.get_connection() as conn:
+        row = conn.execute("SELECT lucro FROM bets_placed WHERE id = ?", (bet_id,)).fetchone()
+    lucro = row['lucro'] if row else 0
+
+    try:
+        texto_original = query.message.text_html or query.message.text or ""
+        await query.edit_message_text(
+            text=texto_original + f"\n\n🟢 Ganhou (+R$ {lucro:.2f})",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+
+async def bet_result_loss_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: usuário clicou '🔴 Perdi'"""
+    query = update.callback_query
+    await query.answer()
+
+    bet_id = int(query.data.split(":")[1])
+
+    status = bets_tracker.get_bet_status(bet_id)
+    if status is None:
+        await query.answer("Aposta não encontrada", show_alert=True)
+        return
+    if status in STATUSES_FINAIS:
+        await query.answer("Esta aposta já foi registrada", show_alert=True)
+        return
+
+    try:
+        bets_tracker.marcar_resultado(bet_id, 'perdeu')
+    except StatusFinalError:
+        await query.answer("Esta aposta já foi registrada", show_alert=True)
+        return
+
+    with db.get_connection() as conn:
+        row = conn.execute("SELECT lucro FROM bets_placed WHERE id = ?", (bet_id,)).fetchone()
+    lucro = row['lucro'] if row else 0
+
+    try:
+        texto_original = query.message.text_html or query.message.text or ""
+        await query.edit_message_text(
+            text=texto_original + f"\n\n🔴 Perdeu (R$ {lucro:.2f})",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+
+async def bet_result_push_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: usuário clicou '⚪ Empate'"""
+    query = update.callback_query
+    await query.answer()
+
+    bet_id = int(query.data.split(":")[1])
+
+    status = bets_tracker.get_bet_status(bet_id)
+    if status is None:
+        await query.answer("Aposta não encontrada", show_alert=True)
+        return
+    if status in STATUSES_FINAIS:
+        await query.answer("Esta aposta já foi registrada", show_alert=True)
+        return
+
+    try:
+        bets_tracker.marcar_resultado(bet_id, 'empate')
+    except StatusFinalError:
+        await query.answer("Esta aposta já foi registrada", show_alert=True)
+        return
+
+    try:
+        texto_original = query.message.text_html or query.message.text or ""
+        await query.edit_message_text(
+            text=texto_original + "\n\n⚪ Empate (R$ 0,00)",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+
+async def bet_cashout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: usuário clicou '💸 Cashout'"""
+    query = update.callback_query
+    await query.answer()
+
+    bet_id = int(query.data.split(":")[1])
+
+    status = bets_tracker.get_bet_status(bet_id)
+    if status is None:
+        await query.answer("Aposta não encontrada", show_alert=True)
+        return
+    if status in STATUSES_FINAIS:
+        await query.answer("Esta aposta já foi registrada", show_alert=True)
+        return
+
+    # Edita mensagem pedindo valor
+    try:
+        texto_original = query.message.text_html or query.message.text or ""
+        await query.edit_message_text(
+            text=texto_original + "\n\n⏳ Aguardando valor do cashout...",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+    context.user_data["esperando_valor_cashout"] = bet_id
+    context.user_data["bet_cashout_msg_id"] = query.message.message_id
+
+
+async def bet_postpone_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: usuário clicou '⏰ Adiar 3h'"""
+    query = update.callback_query
+
+    bet_id = int(query.data.split(":")[1])
+
+    status = bets_tracker.get_bet_status(bet_id)
+    if status is None:
+        await query.answer("Aposta não encontrada", show_alert=True)
+        return
+    if status in STATUSES_FINAIS:
+        await query.answer("Esta aposta já foi registrada", show_alert=True)
+        return
+
+    try:
+        bets_tracker.adiar_lembrete(bet_id)
+    except StatusFinalError:
+        await query.answer("Esta aposta já foi registrada", show_alert=True)
+        return
+
+    await query.answer("Lembrete adiado por 3 horas", show_alert=False)
+
+
+# ===== BET TRACKING: Comandos de consulta =====
+
+async def banca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /banca — resumo de ROI dos últimos N dias."""
+    chat_id = str(update.effective_chat.id)
+
+    # Aceita /banca ou /banca {dias}
+    dias = 30
+    if context.args:
+        try:
+            dias = int(context.args[0])
+            if dias <= 0:
+                dias = 30
+        except ValueError:
+            dias = 30
+
+    resumo = bets_tracker.get_resumo(chat_id, dias)
+
+    if resumo['total_apostas'] == 0:
+        await update.message.reply_text(
+            f"📊 <b>Banca — últimos {dias} dias</b>\n\n"
+            "Nenhuma aposta finalizada neste período.",
+            parse_mode="HTML"
+        )
+        return
+
+    roi_emoji = "📈" if resumo['roi_pct'] >= 0 else "📉"
+    lucro_sinal = "+" if resumo['lucro_total'] >= 0 else ""
+
+    msg = (
+        f"📊 <b>Banca — últimos {dias} dias</b>\n\n"
+        f"🎯 <b>Apostas finalizadas:</b> {resumo['total_apostas']}\n"
+        f"  🟢 Ganhou: {resumo['ganhou']}\n"
+        f"  🔴 Perdeu: {resumo['perdeu']}\n"
+        f"  ⚪ Empate: {resumo['empate']}\n"
+        f"  💸 Cashout: {resumo['cashout']}\n\n"
+        f"💰 <b>Total investido:</b> R$ {resumo['total_apostado']:.2f}\n"
+        f"💵 <b>Lucro:</b> {lucro_sinal}R$ {resumo['lucro_total']:.2f}\n"
+        f"{roi_emoji} <b>ROI:</b> {resumo['roi_pct']:.1f}%\n"
+        f"📈 <b>EV médio:</b> {resumo['ev_medio']*100:.2f}%"
+    )
+
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+
+async def pendentes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /pendentes — apostas aguardando resultado."""
+    chat_id = str(update.effective_chat.id)
+
+    pendentes = bets_tracker.get_pendentes(chat_id)
+
+    if not pendentes:
+        await update.message.reply_text(
+            "⏳ <b>Apostas pendentes</b>\n\nNenhuma aposta aguardando resultado.",
+            parse_mode="HTML"
+        )
+        return
+
+    msg = f"⏳ <b>Apostas pendentes ({len(pendentes)})</b>\n\n"
+    for i, ap in enumerate(pendentes[:20], 1):
+        ct = ap.get('commence_time_ajustado') or ap.get('commence_time', '')
+        msg += (
+            f"<b>{i}.</b> {ap.get('home', '')} vs {ap.get('away', '')}\n"
+            f"   📌 {ap.get('market_type', '')} | Odd: {ap.get('odd_alerta', 0):.2f}\n"
+            f"   💰 R$ {ap.get('valor_apostado', 0):.2f} | 🗓️ {ct}\n\n"
+        )
+
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+
+async def historico_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /historico — últimas 20 apostas finalizadas."""
+    chat_id = str(update.effective_chat.id)
+
+    historico = bets_tracker.get_historico(chat_id)
+
+    if not historico:
+        await update.message.reply_text(
+            "📜 <b>Histórico</b>\n\nNenhuma aposta finalizada encontrada.",
+            parse_mode="HTML"
+        )
+        return
+
+    status_emoji = {
+        'ganhou': '🟢', 'perdeu': '🔴', 'empate': '⚪', 'cashout': '💸'
+    }
+
+    msg = f"📜 <b>Histórico (últimas {len(historico)})</b>\n\n"
+    for i, ap in enumerate(historico, 1):
+        emoji = status_emoji.get(ap.get('status', ''), '❓')
+        lucro = ap.get('lucro', 0) or 0
+        lucro_fmt = f"+R$ {lucro:.2f}" if lucro >= 0 else f"R$ {lucro:.2f}"
+        msg += (
+            f"{emoji} {ap.get('home', '')} vs {ap.get('away', '')}\n"
+            f"   Odd: {ap.get('odd_alerta', 0):.2f} | "
+            f"Apostado: R$ {ap.get('valor_apostado', 0):.2f} | "
+            f"Lucro: {lucro_fmt}\n\n"
+        )
+
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+
 # ----- Inicializar bot -----
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
@@ -3012,6 +3441,22 @@ app.add_handler(CallbackQueryHandler(esporte_callback_handler, pattern="^esporte
 
 # Callbacks para limpeza
 app.add_handler(CallbackQueryHandler(limpar_callback_handler, pattern="^limpar_"))
+
+# Callbacks para bet tracking (apostei/pulei)
+app.add_handler(CallbackQueryHandler(bet_yes_callback, pattern=r"^bet_yes:\d+$"))
+app.add_handler(CallbackQueryHandler(bet_no_callback, pattern=r"^bet_no:\d+$"))
+
+# Callbacks para bet tracking (resultado)
+app.add_handler(CallbackQueryHandler(bet_result_win_callback, pattern=r"^bet_result_win:\d+$"))
+app.add_handler(CallbackQueryHandler(bet_result_loss_callback, pattern=r"^bet_result_loss:\d+$"))
+app.add_handler(CallbackQueryHandler(bet_result_push_callback, pattern=r"^bet_result_push:\d+$"))
+app.add_handler(CallbackQueryHandler(bet_cashout_callback, pattern=r"^bet_cashout:\d+$"))
+app.add_handler(CallbackQueryHandler(bet_postpone_callback, pattern=r"^bet_postpone:\d+$"))
+
+# Comandos de consulta bet tracking
+app.add_handler(CommandHandler("banca", banca_command))
+app.add_handler(CommandHandler("pendentes", pendentes_command))
+app.add_handler(CommandHandler("historico", historico_command))
 
 # Botões interativos das regiões (start e presets) - DEVE SER O ÚLTIMO
 app.add_handler(CallbackQueryHandler(callback_handler))

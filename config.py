@@ -84,8 +84,9 @@ def get_database_path(feed_id: str = None) -> str:
     return feed_path("bot.db", feed_id)
 
 # Configurações do sistema
-RATE_LIMIT_REQUESTS_PER_HOUR = 4800  # Buffer de segurança
+RATE_LIMIT_REQUESTS_PER_HOUR = 90
 MAX_CONCURRENT_SCANS = 3
+THRESHOLD_EV_ALTO = 0.08  # 8% — alertas com EV >= este valor recebem template destacado
 CACHE_CLEANUP_DAYS = 30
 REQUEST_LOG_CLEANUP_HOURS = 2
 
