@@ -576,14 +576,21 @@ class AlertSender:
         except Exception as e:
             logger.error(f"Erro no broadcast: {e}")
 
-# Instância global do alert sender
-alert_sender = AlertSender()
+# Instância lazy do alert sender
+_alert_sender: AlertSender | None = None
+
+def get_alert_sender() -> AlertSender:
+    """Retorna instância singleton do AlertSender (lazy init)."""
+    global _alert_sender
+    if _alert_sender is None:
+        _alert_sender = AlertSender()
+    return _alert_sender
 
 async def enviar_alerta(chat_id: int, aposta: Dict[str, Any]):
     """
     Função global para enviar alerta
     """
-    await alert_sender.enviar_alerta(chat_id, aposta)
+    await get_alert_sender().enviar_alerta(chat_id, aposta)
 
 async def enviar_alerta_instantaneo(chat_id, evento: Dict[str, Any], stake: float):
     """
@@ -615,16 +622,16 @@ async def enviar_alerta_instantaneo(chat_id, evento: Dict[str, Any], stake: floa
             "ev_alerta": evento.get('ev', 0),
             "commence_time": evento.get('commence_time', ''),
         }
-        bet_id = alert_sender._bets_tracker.registrar_alerta(alert_hash, chat_id_str, FEED_ID, dados_alerta)
+        bet_id = get_alert_sender()._bets_tracker.registrar_alerta(alert_hash, chat_id_str, FEED_ID, dados_alerta)
 
         # Formata o alerta com template destacado
-        mensagem = await alert_sender._formatar_alerta_destacado(evento, stake)
+        mensagem = await get_alert_sender()._formatar_alerta_destacado(evento, stake)
 
         # Monta keyboard com bet_id
-        keyboard = alert_sender._montar_keyboard(bet_id)
+        keyboard = get_alert_sender()._montar_keyboard(bet_id)
 
         # Envia IMEDIATAMENTE com botões
-        await alert_sender.bot.send_message(
+        await get_alert_sender().bot.send_message(
             chat_id=chat_id_int,
             text=mensagem,
             parse_mode='HTML',
@@ -646,15 +653,9 @@ async def enviar_alertas_batch(chat_id, batch: list):
         chat_id_int = int(chat_id) if isinstance(chat_id, str) else chat_id
         
         for aposta, stake in batch:
-            await alert_sender.enviar_alerta(chat_id_int, aposta)
+            await get_alert_sender().enviar_alerta(chat_id_int, aposta)
             # Pequena pausa entre alertas para evitar spam
             await asyncio.sleep(0.5)
     except Exception as e:
         logger.error(f"Erro ao enviar batch para {chat_id}: {e}")
         raise
-
-def get_alert_sender() -> AlertSender:
-    """
-    Retorna instância do alert sender
-    """
-    return alert_sender
