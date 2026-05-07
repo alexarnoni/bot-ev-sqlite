@@ -117,6 +117,9 @@ class GlobalScanner:
                     f"🔗 Buscando eventos em lote para {len(lista_bookmakers)} bookmakers (1 request global): {lista_bookmakers}"
                 )
                 todos_eventos = await self.api_client.get_value_bets(lista_bookmakers)
+                # Registra requisições no rate limiter global (1 por bookmaker)
+                for _ in lista_bookmakers:
+                    self.global_rl.log_request(endpoint='/value-bets', api_key=self.api_client.api_key[:8])
             except Exception as e:
                 logger.error(f"❌ Erro ao buscar eventos em lote global: {e}")
                 self.stats['erros_api'] += 1

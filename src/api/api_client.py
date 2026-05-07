@@ -6,13 +6,12 @@ import aiohttp
 from aiohttp import ClientTimeout
 import time
 from typing import List, Dict, Optional
-from src.core.config import ODDS_API_KEY, ODDS_API_BASE, RATE_LIMIT_REQUESTS_PER_HOUR
+from src.core.config import ODDS_API_KEY, ODDS_API_BASE
 from src.core.database import get_db, generate_alert_hash
 from src.utils.metrics import record_api_request, measure_time
-from src.api.rate_limiter_global import get_global_rate_limiter
 from src.core.logging_config import get_api_logger
 from src.utils.messages import (
-    api_offline, rate_limit, invalid_bookmaker, 
+    api_offline, invalid_bookmaker, 
     no_events, high_ev_alert
 )
 
@@ -22,9 +21,7 @@ class OddsAPI:
         if not self.api_key:
             raise ValueError("❌ ODDS_API_KEY não configurada no .env")
         self.base_url = ODDS_API_BASE
-        self.rate_limit = RATE_LIMIT_REQUESTS_PER_HOUR
         self.db = get_db()
-        self.global_rl = get_global_rate_limiter()
         self.logger = get_api_logger()
         # Log API key initialization with masking
         self.timeout = ClientTimeout(total=30)
@@ -34,15 +31,6 @@ class OddsAPI:
             'Bet365', 'Betfair Sportsbook', 'Novibet', 'Superbet', 'BetMGM', 'Betano',
             'Betsson'
         ]
-    
-    def _check_rate_limit(self) -> bool:
-        """Verifica se pode fazer requisição sem exceder rate limit"""
-        requests_last_hour = self.db.get_request_count_last_hour()
-        return requests_last_hour < self.rate_limit
-    
-    def _log_request(self):
-        """Registra requisição para rate limiting"""
-        self.db.add_request_log()
     
     def _parse_float(self, value) -> Optional[float]:
         """Converte string para float de forma segura"""
@@ -137,19 +125,6 @@ class OddsAPI:
     @measure_time('api_request')
     async def get_value_bets(self, bookmakers: List[str]) -> List[Dict]:
         """Busca apostas com valor (EV+) para bookmakers específicos"""
-        # Rate limit GLOBAL primeiro
-        try:
-            if not self.global_rl.can_make_request():
-                self.logger.warning("Rate limit global atingido, pulando requisição")
-                self.db.set_api_status(False, "Rate limit global atingido", "429")
-                return []
-        except Exception:
-            pass
-
-        if not self._check_rate_limit():
-            self.logger.warning("Rate limit atingido, aguardando...")
-            return []
-        
         # Normaliza input: aceita string única com vírgulas ou lista; filtra inválidos e remove duplicatas
         if isinstance(bookmakers, str):
             bookmakers = [b.strip() for b in bookmakers.split(',') if b.strip()]
@@ -170,11 +145,6 @@ class OddsAPI:
         last_error = None
 
         for bookmaker in valid_bookmakers:
-            # Check rate limit before each request
-            if not self._check_rate_limit():
-                self.logger.warning("Rate limit atingido durante loop de bookmakers")
-                break
-
             params = {
                 'apiKey': self.api_key,
                 'bookmaker': bookmaker,  # singular - uma requisição por bookmaker
@@ -183,12 +153,6 @@ class OddsAPI:
 
             for attempt in range(1, max_attempts + 1):
                 try:
-                    self._log_request()
-                    try:
-                        self.global_rl.log_request(endpoint='/value-bets', api_key=self.api_key[:8])
-                    except Exception:
-                        pass
-
                     async with aiohttp.ClientSession() as session:
                         start_time = time.time()
                         async with session.get(url, params=params, timeout=self.timeout) as response:
@@ -241,10 +205,6 @@ class OddsAPI:
         
     async def get_eventos_geral(self, bookmaker: str) -> List[Dict]:
         """Busca eventos gerais para um bookmaker específico"""
-        if not self._check_rate_limit():
-            self.logger.warning("Rate limit atingido, aguardando...")
-            return []
-        
         # Validação do bookmaker individual
         if bookmaker not in self.allowed_bookmakers:
             self.logger.warning(invalid_bookmaker(bookmaker))
@@ -261,12 +221,6 @@ class OddsAPI:
         base_delay = 0.5
         for attempt in range(1, max_attempts + 1):
             try:
-                self._log_request()
-                try:
-                    self.global_rl.log_request(endpoint='/value-bets', api_key=self.api_key[:8])
-                except Exception:
-                    pass
-
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url, params=params, timeout=self.timeout) as response:
                         if response.status == 200:
@@ -296,12 +250,7 @@ class OddsAPI:
         """
         Busca lista de bookmakers ativos que a API está fornecendo dados
         """
-        if not self._check_rate_limit():
-            return []
-        
         try:
-            self._log_request()
-            
             # Endpoint para buscar bookmakers disponíveis
             url = f"{self.base_url}/sports"
             params = {'apiKey': self.api_key}
