@@ -16,7 +16,7 @@ from src.api.api_client import OddsAPIClient
 from src.api.rate_limiter_global import get_global_rate_limiter
 from src.utils.utils import logger_geral, logger_scan, update_league_catalog, LIGAS_POR_REGIAO
 from src.core.logging_config import get_logger
-from src.utils.metrics import record_scan_duration, measure_time, get_metrics_summary
+from src.utils.metrics import measure_time
 from src.scanner.scan_cache import get_snapshot_cache
 
 # Logger específico para scanner global
@@ -151,9 +151,6 @@ class GlobalScanner:
             elapsed = time.time() - start_time
             logger.info(f"✅ Scan global concluído em {elapsed:.2f}s - {len(todos_eventos)} eventos para todos os feeds")
             
-            # Registra métricas do scan
-            record_scan_duration(elapsed, len(todos_eventos), 0)  # 0 alerts pois só coleta dados
-            
         except Exception as e:
             logger.error(f"❌ Erro no scan global: {e}")
             self.stats['erros_api'] += 1
@@ -238,21 +235,6 @@ class GlobalScanner:
             logger.info(f"   Total de eventos: {self.stats['total_eventos']}")
             logger.info(f"   Último scan: {self.stats['ultimo_scan']}")
             logger.info(f"   Erros API: {self.stats['erros_api']}")
-            
-            # Salva métricas detalhadas
-            metrics_summary = get_metrics_summary()
-            logger.info("📈 Métricas de Performance:")
-            
-            # Mostra percentis de latência
-            if 'latency_metrics' in metrics_summary:
-                for category, metrics in metrics_summary['latency_metrics'].items():
-                    if metrics.get('percentiles'):
-                        p50 = metrics['percentiles'].get('p50', 0)
-                        p95 = metrics['percentiles'].get('p95', 0)
-                        p99 = metrics['percentiles'].get('p99', 0)
-                        logger.info(f"   {category}: P50={p50:.3f}s, P95={p95:.3f}s, P99={p99:.3f}s")
-            
-            # Métricas apenas logadas (save_metrics removido por ser síncrono e travar o event loop)
             
         except Exception as e:
             logger.error(f"❌ Erro ao coletar estatísticas: {e}")
