@@ -4,7 +4,7 @@ Usa SQLite em data/global/rate_limit.db
 """
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Dict
 
 
@@ -85,7 +85,7 @@ class GlobalRateLimiter:
 
     def log_request(self, endpoint: str = '/value-bets', api_key: Optional[str] = None) -> None:
         with self._connect() as conn:
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
             conn.execute(
                 "INSERT INTO api_requests (request_timestamp, endpoint, api_key) VALUES (?, ?, ?)",
                 (now, endpoint, api_key or ''),
@@ -94,7 +94,7 @@ class GlobalRateLimiter:
     # ---- User scans ----
     def log_user_scan(self, chat_id: str) -> None:
         with self._connect() as conn:
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
             conn.execute(
                 "INSERT INTO user_scans (chat_id, scan_timestamp) VALUES (?, ?)",
                 (str(chat_id), now),
