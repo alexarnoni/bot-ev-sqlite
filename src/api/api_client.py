@@ -3,6 +3,7 @@ Cliente da Odds API para buscar eventos com EV+
 """
 import asyncio
 import aiohttp
+from aiohttp import ClientTimeout
 import time
 from typing import List, Dict, Optional
 from src.core.config import ODDS_API_KEY, ODDS_API_BASE, RATE_LIMIT_REQUESTS_PER_HOUR
@@ -26,6 +27,7 @@ class OddsAPI:
         self.global_rl = get_global_rate_limiter()
         self.logger = get_api_logger()
         # Log API key initialization with masking
+        self.timeout = ClientTimeout(total=30)
         self.logger.info(f"✅ API Client inicializada (key: {self.api_key[:8]}...)")
         # Lista de bookmakers suportados pela integração atual
         self.allowed_bookmakers = [
@@ -189,7 +191,7 @@ class OddsAPI:
 
                     async with aiohttp.ClientSession() as session:
                         start_time = time.time()
-                        async with session.get(url, params=params) as response:
+                        async with session.get(url, params=params, timeout=self.timeout) as response:
                             duration = time.time() - start_time
                             record_api_request(duration, response.status, '/value-bets')
 
@@ -266,7 +268,7 @@ class OddsAPI:
                     pass
 
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(url, params=params) as response:
+                    async with session.get(url, params=params, timeout=self.timeout) as response:
                         if response.status == 200:
                             data = await response.json()
                             eventos = []
@@ -305,7 +307,7 @@ class OddsAPI:
             params = {'apiKey': self.api_key}
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
+                async with session.get(url, params=params, timeout=self.timeout) as response:
                     if response.status == 200:
                         data = await response.json()
                         # A API retorna esportes, vamos usar lista fixa dos principais bookmakers
