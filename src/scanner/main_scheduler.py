@@ -12,6 +12,7 @@ from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
 from src.core.config import MAX_CONCURRENT_SCANS, FEED_ID
 from src.core.database import get_db
+from src.bot.bets_tracker import BetsTracker
 from src.data.usuarios import get_user_manager
 from src.data.cache import get_cache
 from src.data.historico import get_history
@@ -36,6 +37,7 @@ class BotScheduler:
         self.db = get_db()
         self.rate_limiter = get_rate_limiter()
         self.snapshot_cache = get_snapshot_cache()
+        self.bets_tracker = BetsTracker(self.db)
         
         # Semáforo para controlar concorrência
         self.scan_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SCANS)
@@ -80,6 +82,24 @@ class BotScheduler:
             self.stats_job,
             IntervalTrigger(minutes=30),
             id='stats'
+        )
+        
+        # Job de lembrete pós-jogo a cada 15 minutos
+        self.scheduler.add_job(
+            self.lembrete_pos_jogo_job,
+            IntervalTrigger(minutes=15),
+            id='lembrete_pos_jogo',
+            max_instances=1,
+            replace_existing=True,
+        )
+        
+        # Job de expiração de alertas antigos a cada 30 minutos
+        self.scheduler.add_job(
+            self.expiracao_job,
+            IntervalTrigger(minutes=30),
+            id='expiracao_bets',
+            max_instances=1,
+            replace_existing=True,
         )
         
         # Inicia o scheduler
@@ -310,6 +330,92 @@ class BotScheduler:
             
         except Exception as e:
             logger_geral.error(f"❌ Erro ao coletar estatísticas: {e}")
+    
+    async def lembrete_pos_jogo_job(self):
+        """Job de lembrete pós-jogo — executa a cada 15 minutos."""
+        try:
+            from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+            from src.core.config import get_telegram_token
+            from src.utils.formatadores import formatar_data_brasileira
+
+            pendentes = self.bets_tracker.get_pendentes_para_lembrete()
+            if not pendentes:
+                return
+
+            bot = Bot(token=get_telegram_token())
+
+            for aposta in pendentes:
+                chat_id = aposta['chat_id']
+                bet_id = aposta['id']
+                try:
+                    texto = self._formatar_lembrete(aposta)
+                    keyboard = self._montar_keyboard_resultado(bet_id)
+
+                    await bot.send_message(
+                        chat_id=int(chat_id),
+                        text=texto,
+                        parse_mode='HTML',
+                        reply_markup=keyboard,
+                        disable_web_page_preview=True,
+                    )
+                    self.bets_tracker.marcar_lembrete_enviado(bet_id)
+
+                except Exception as e:
+                    logger_geral.error(f"Falha lembrete bet_id={bet_id} chat_id={chat_id}: {e}")
+                    novo = self.bets_tracker.incrementar_tentativa_lembrete(bet_id)
+                    if novo >= 5:
+                        self.bets_tracker.marcar_resultado_expirado(bet_id)
+                        logger_geral.warning(f"Aposta bet_id={bet_id} expirada após {novo} tentativas")
+                    continue
+
+        except Exception as e:
+            logger_geral.error(f"Erro no job lembrete_pos_jogo: {e}")
+
+    async def expiracao_job(self):
+        """Job de expiração — executa a cada 30 minutos."""
+        try:
+            expirados = self.bets_tracker.expirar_alertas_antigos()
+            if expirados > 0:
+                logger_geral.info(f"🗑️ {expirados} alertas expirados automaticamente")
+        except Exception as e:
+            logger_geral.error(f"Erro no job expiracao_bets: {e}")
+
+    def _formatar_lembrete(self, aposta: dict) -> str:
+        """Formata mensagem de lembrete pós-jogo."""
+        from src.utils.formatadores import formatar_data_brasileira
+        home = aposta.get('home', '')
+        away = aposta.get('away', '')
+        league = aposta.get('league', '')
+        market = aposta.get('market_type', '')
+        odd = aposta.get('odd_alerta', 0)
+        valor = aposta.get('valor_apostado', 0)
+        ct = aposta.get('commence_time_ajustado') or aposta.get('commence_time', '')
+        data_fmt = formatar_data_brasileira(ct) if ct else "N/A"
+        return (
+            f"⏰ <b>Resultado pendente!</b>\n\n"
+            f"⚽ <b>{home} vs {away}</b>\n"
+            f"🏆 {league}\n"
+            f"📌 Mercado: {market}\n"
+            f"🔢 Odd: {odd:.2f}\n"
+            f"💰 Apostado: R$ {valor:.2f}\n"
+            f"🗓️ Jogo: {data_fmt}\n\n"
+            f"Qual foi o resultado?"
+        )
+
+    def _montar_keyboard_resultado(self, bet_id: int):
+        """Retorna keyboard com 5 botões de resultado."""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🟢 Ganhei", callback_data=f"bet_result_win:{bet_id}"),
+                InlineKeyboardButton("🔴 Perdi", callback_data=f"bet_result_loss:{bet_id}"),
+                InlineKeyboardButton("⚪ Empate", callback_data=f"bet_result_push:{bet_id}"),
+            ],
+            [
+                InlineKeyboardButton("💸 Cashout", callback_data=f"bet_cashout:{bet_id}"),
+                InlineKeyboardButton("⏰ Adiar 3h", callback_data=f"bet_postpone:{bet_id}"),
+            ],
+        ])
     
     def get_stats(self) -> dict:
         """Retorna estatísticas do scheduler"""
