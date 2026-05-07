@@ -31,7 +31,7 @@ mkdir -p data/global data/default data/feed1 data/feed2 data/feed3 data/feed4 lo
 python -c "
 import os
 os.environ['FEED_ID'] = 'default'
-from database import get_db
+from src.core.database import get_db
 db = get_db()
 print('Database inicializado')
 "
@@ -54,9 +54,9 @@ elif [ "$1" = "test" ]; then
     python -c "
 import os
 os.environ['FEED_ID'] = 'default'
-from global_scanner import GlobalScanner
-from main_scheduler import BotScheduler
-from scan_cache import get_snapshot_cache
+from src.scanner.global_scanner import GlobalScanner
+from src.scanner.main_scheduler import BotScheduler
+from src.scanner.scan_cache import get_snapshot_cache
 print('Todos os módulos importados com sucesso!')
 "
 else

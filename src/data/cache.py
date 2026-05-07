@@ -2,7 +2,7 @@
 Sistema de cache de alertas para evitar duplicatas
 """
 from typing import Set
-from database import get_db, generate_alert_hash
+from src.core.database import get_db, generate_alert_hash
 
 class AlertCache:
     def __init__(self):

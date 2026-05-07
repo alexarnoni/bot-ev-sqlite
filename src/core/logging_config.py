@@ -6,7 +6,7 @@ import re
 import logging
 from logging.handlers import RotatingFileHandler
 from typing import Optional
-from config import FEED_ID, BASE_PATH
+from src.core.config import FEED_ID, BASE_PATH
 
 class SecretMaskingFormatter(logging.Formatter):
     """Custom formatter that masks sensitive information in log messages"""

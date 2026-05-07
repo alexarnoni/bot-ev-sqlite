@@ -5,8 +5,8 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
-from database import SQLiteConnectionPool, SQLiteConnectionConfig
-from config import RATE_LIMIT_REQUESTS_PER_HOUR
+from src.core.database import SQLiteConnectionPool, SQLiteConnectionConfig
+from src.core.config import RATE_LIMIT_REQUESTS_PER_HOUR
 import os
 
 logger = logging.getLogger(__name__)
@@ -108,7 +108,7 @@ class APIRateLimiter:
         """
         try:
             # Usar o método síncrono do database para evitar problemas de async
-            from database import get_db
+            from src.core.database import get_db
             db = get_db()
             
             requests_used = db.get_request_count_last_hour()

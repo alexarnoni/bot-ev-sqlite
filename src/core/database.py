@@ -7,7 +7,7 @@ import hashlib
 from datetime import datetime, timezone
 from contextlib import contextmanager, asynccontextmanager
 from typing import Optional, List, Dict, Set, Any
-from config import feed_path, FEED_ID
+from src.core.config import feed_path, FEED_ID
 
 class DatabaseError(Exception):
     """Exceção personalizada para erros de banco de dados"""
@@ -679,7 +679,7 @@ def get_db() -> Database:
     """Retorna instância singleton do banco"""
     global _db_instance
     if _db_instance is None:
-        from config import FEED_ID
+        from src.core.config import FEED_ID
         _db_instance = Database(FEED_ID)
     return _db_instance
 

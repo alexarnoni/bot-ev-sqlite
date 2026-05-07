@@ -15,7 +15,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar código da aplicação
-COPY . .
+COPY src/ ./src/
+COPY *.py ./
+COPY .env* ./
 
 # Criar diretórios necessários
 RUN mkdir -p data/global data/default data/feed1 data/feed2 data/feed3 data/feed4 logs

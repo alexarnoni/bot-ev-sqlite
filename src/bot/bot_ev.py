@@ -8,10 +8,10 @@ from typing import Dict, Any, Optional
 from telegram import Bot
 from telegram.error import TelegramError
 
-from config import get_telegram_token
-from database import SQLiteConnectionPool, SQLiteConnectionConfig
-from bot_core import definir_stake
-from formatadores import formatar_ev, formatar_odd, formatar_stake
+from src.core.config import get_telegram_token
+from src.core.database import SQLiteConnectionPool, SQLiteConnectionConfig
+from src.bot.bot_core import definir_stake
+from src.utils.formatadores import formatar_ev, formatar_odd, formatar_stake
 import os
 
 logger = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ class AlertSender:
             tempo_restante = self._calcular_tempo_restante(commence_time)
             
             # Formata data completa
-            from formatadores import formatar_data_brasileira, formatar_nome_esporte, formatar_nome_bookmaker, formatar_market_name
+            from src.utils.formatadores import formatar_data_brasileira, formatar_nome_esporte, formatar_nome_bookmaker, formatar_market_name
             data_completa = formatar_data_brasileira(commence_time)
             esporte_fmt = formatar_nome_esporte(sport)
             bookmaker_fmt = formatar_nome_bookmaker(bookmaker)
@@ -157,7 +157,7 @@ class AlertSender:
             tempo_restante = self._calcular_tempo_restante(commence_time)
             
             # Formata data completa
-            from formatadores import formatar_data_brasileira, formatar_nome_esporte, formatar_nome_bookmaker, formatar_market_name
+            from src.utils.formatadores import formatar_data_brasileira, formatar_nome_esporte, formatar_nome_bookmaker, formatar_market_name
             data_completa = formatar_data_brasileira(commence_time)
             esporte_fmt = formatar_nome_esporte(sport)
             bookmaker_fmt = formatar_nome_bookmaker(bookmaker)

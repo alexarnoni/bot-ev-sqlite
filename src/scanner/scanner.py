@@ -6,19 +6,19 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 
-from api_client import OddsAPI
-from scan_cache import get_snapshot_cache
-from database import SQLiteConnectionPool, SQLiteConnectionConfig
-from filtros import evento_valido, aplicar_filtros_dinamicos, validar_filtros_usuario
-from rate_limiter import api_rate_limiter
-from rate_limiter_global import get_global_rate_limiter
-from status import get_odds_api_status
-from utils import carregar_catalogo_ligas
-from bot_ev import enviar_alertas_batch, enviar_alerta_instantaneo
-from bot_core import definir_stake
-from cache import get_cache
-from config import FEED_ID
-from messages import (
+from src.api.api_client import OddsAPI
+from src.scanner.scan_cache import get_snapshot_cache
+from src.core.database import SQLiteConnectionPool, SQLiteConnectionConfig
+from src.filters.filtros import evento_valido, aplicar_filtros_dinamicos, validar_filtros_usuario
+from src.api.rate_limiter import api_rate_limiter
+from src.api.rate_limiter_global import get_global_rate_limiter
+from src.api.status import get_odds_api_status
+from src.utils.utils import carregar_catalogo_ligas
+from src.bot.bot_ev import enviar_alertas_batch, enviar_alerta_instantaneo
+from src.bot.bot_core import definir_stake
+from src.data.cache import get_cache
+from src.core.config import FEED_ID
+from src.utils.messages import (
     api_offline, global_rate_limit, scan_rate_limit, 
     no_events, user_not_found, snapshot_expired, high_ev_alert
 )
@@ -329,7 +329,7 @@ async def _processar_apostas_usuario(usuario: Dict[str, Any], apostas: List[Dict
         janela_tempo = None
         filtro_dias = filtros.get("filtro_dias")
         if filtro_dias and momento_scan:
-            from filtros import calcular_janela_tempo_dinamica
+            from src.filters.filtros import calcular_janela_tempo_dinamica
             janela_tempo = calcular_janela_tempo_dinamica(filtro_dias, momento_scan)
         
         # Filtra eventos válidos (MESMA LÓGICA DO SCAN AUTOMÁTICO)
@@ -479,7 +479,7 @@ async def _salvar_no_historico(chat_id: int, aposta: Dict[str, Any]):
     """
     try:
         # Gera hash consistente com banco
-        from database import generate_alert_hash
+        from src.core.database import generate_alert_hash
         alert_hash = generate_alert_hash(aposta)
 
         async with db_pool.get_connection() as conn:
@@ -516,4 +516,3 @@ def _gerar_hash_aposta(aposta: Dict[str, Any]) -> str:
     
     # Gera hash MD5
     return hashlib.md5(dados.encode()).hexdigest()
-

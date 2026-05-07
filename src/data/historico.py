@@ -3,7 +3,7 @@ Sistema de histórico de alertas
 """
 from datetime import datetime
 from typing import List, Dict
-from database import get_db, generate_alert_hash
+from src.core.database import get_db, generate_alert_hash
 
 class AlertHistory:
     def __init__(self):

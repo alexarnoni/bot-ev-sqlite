@@ -2,7 +2,7 @@
 Sistema de gerenciamento de usuários
 """
 from typing import List, Dict, Optional
-from database import get_db
+from src.core.database import get_db
 
 class UserManager:
     def __init__(self):

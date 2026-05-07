@@ -130,7 +130,7 @@ def get_global_rate_limiter() -> GlobalRateLimiter:
     if _global_rl is None:
         # RATE_LIMIT_REQUESTS_PER_HOUR vem do config; se indisponível, fallback 3000
         try:
-            from config import RATE_LIMIT_REQUESTS_PER_HOUR
+            from src.core.config import RATE_LIMIT_REQUESTS_PER_HOUR
             _global_rl = GlobalRateLimiter(max_requests_per_hour=RATE_LIMIT_REQUESTS_PER_HOUR)
         except Exception:
             _global_rl = GlobalRateLimiter()

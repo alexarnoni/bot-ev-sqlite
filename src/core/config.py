@@ -28,7 +28,8 @@ ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 ODDS_API_BASE = "https://api.odds-api.io/v3"
 
 # Paths base
-BASE_PATH = os.path.dirname(os.path.abspath(__file__))
+# Navigate up from src/core/ to project root: __file__ → src/core/ → src/ → project_root/
+BASE_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BOT_DATA_ROOT = os.getenv("BOT_DATA_ROOT", "data")
 
 def feed_path(filename: str, feed_id: str = None) -> str:

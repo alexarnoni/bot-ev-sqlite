@@ -2,7 +2,7 @@
 Configuração de bookmakers - verifica se usuário está configurado
 """
 import asyncio
-from database import get_db
+from src.core.database import get_db
 import os
 
 # Configuração do banco de dados

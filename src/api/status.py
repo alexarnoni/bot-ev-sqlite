@@ -5,7 +5,7 @@ import asyncio
 import aiohttp
 import logging
 from typing import Dict, Any
-from config import ODDS_API_KEY, ODDS_API_BASE
+from src.core.config import ODDS_API_KEY, ODDS_API_BASE
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ async def get_system_status() -> Dict[str, Any]:
         
         # Status do banco de dados
         try:
-            from database import SQLiteConnectionPool, SQLiteConnectionConfig
+            from src.core.database import SQLiteConnectionPool, SQLiteConnectionConfig
             import os
             
             db_config = SQLiteConnectionConfig(
@@ -67,7 +67,7 @@ async def get_system_status() -> Dict[str, Any]:
         
         # Status do rate limiter
         try:
-            from rate_limiter import api_rate_limiter
+            from src.api.rate_limiter import api_rate_limiter
             requests_count = await api_rate_limiter.get_requests_count()
         except Exception as e:
             logger.error(f"Erro ao verificar rate limiter: {e}")

@@ -4,8 +4,8 @@ Utilitários gerais do bot
 import logging
 import pycountry
 from typing import Dict, List, Optional, Any
-from database import get_db
-from logging_config import get_general_logger, get_scan_logger, get_alerts_logger
+from src.core.database import get_db
+from src.core.logging_config import get_general_logger, get_scan_logger, get_alerts_logger
 
 # Loggers globais usando configuração centralizada com rotação e masking
 logger_geral = get_general_logger()
