@@ -5,8 +5,8 @@ import os
 from typing import List
 from dotenv import load_dotenv
 
-# Carrega variáveis de ambiente
-load_dotenv()
+# Carrega variáveis de ambiente (override=False preserva vars já definidas, ex: FEED_ID via systemd)
+load_dotenv(override=False)
 
 # Configuração de feeds
 FEEDS = os.getenv("FEEDS", "feed1").split()
