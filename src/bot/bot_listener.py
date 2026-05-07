@@ -31,7 +31,8 @@ logger = get_logger("bot_listener")
 
 # Carregar variáveis de ambiente
 load_dotenv()
-TELEGRAM_TOKEN = get_telegram_token()
+# TELEGRAM_TOKEN é resolvido sob demanda via get_telegram_token()
+# para evitar InvalidToken quando FEED_ID é injetado via systemd.
 # Usar ADMIN_USERS do config.py que já está configurado
 from src.core.config import ADMIN_USERS
 ADMIN_CHAT_ID = str(ADMIN_USERS[0]) if ADMIN_USERS else None
@@ -1536,7 +1537,7 @@ async def admin_broadcast_handler(update, context):
     
     for user_chat_id in filtros_por_chat.keys():
         try:
-            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+            url = f"https://api.telegram.org/bot{get_telegram_token()}/sendMessage"
             params = {
                 "chat_id": user_chat_id,
                 "text": f"📢 <b>Mensagem do Administrador:</b>\n\n{mensagem}",
@@ -3326,93 +3327,111 @@ async def historico_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(msg, parse_mode='HTML')
 
-# ----- Inicializar bot -----
-app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+# ----- Inicializar bot (lazy init) -----
+_app = None
 
-# Comandos principais
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("menu", start))
-app.add_handler(CommandHandler("ajuda", ajuda))
-app.add_handler(CommandHandler("scan", scan_handler))
-app.add_handler(CommandHandler("stats", stats_handler))
-app.add_handler(CommandHandler("filtros", ver_filtros))
-app.add_handler(CommandHandler("bookmakers", escolher_bookmaker))
-app.add_handler(CallbackQueryHandler(callback_bookmaker, pattern="^bookmaker"))
-app.add_handler(CommandHandler("filtrosdata", filtros_data_handler))
-app.add_handler(CommandHandler("filtroshorario", filtros_horario_handler))
 
-# Comandos de bet tracking
-app.add_handler(CommandHandler("banca", banca_command))
-app.add_handler(CommandHandler("pendentes", pendentes_command))
-app.add_handler(CommandHandler("historico", historico_command))
+def get_app():
+    """Retorna instância singleton do Application (lazy init).
 
-# Callbacks de bet tracking (ANTES do callback_handler genérico)
-app.add_handler(CallbackQueryHandler(bet_yes_callback, pattern=r"^bet_yes:\d+$"))
-app.add_handler(CallbackQueryHandler(bet_no_callback, pattern=r"^bet_no:\d+$"))
-app.add_handler(CallbackQueryHandler(bet_result_win_callback, pattern=r"^bet_result_win:\d+$"))
-app.add_handler(CallbackQueryHandler(bet_result_loss_callback, pattern=r"^bet_result_loss:\d+$"))
-app.add_handler(CallbackQueryHandler(bet_result_push_callback, pattern=r"^bet_result_push:\d+$"))
-app.add_handler(CallbackQueryHandler(bet_cashout_callback, pattern=r"^bet_cashout:\d+$"))
-app.add_handler(CallbackQueryHandler(bet_postpone_callback, pattern=r"^bet_postpone:\d+$"))
+    Adia a leitura do token para o momento da primeira chamada,
+    evitando InvalidToken quando FEED_ID é injetado via systemd
+    após o import do módulo.
+    """
+    global _app
+    if _app is not None:
+        return _app
 
-# Text handler — bet tracking integrado no capturar_input_manual
-app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), capturar_input_manual))
+    token = get_telegram_token()
+    _app = ApplicationBuilder().token(token).build()
 
-#Comandos admin
-app.add_handler(CommandHandler("admin", admin_handler))
-app.add_handler(CommandHandler("admin_users", admin_users_handler))
-app.add_handler(CommandHandler("admin_stats", admin_stats_handler))
-app.add_handler(CommandHandler("admin_broadcast", admin_broadcast_handler))
-app.add_handler(CommandHandler("admin_block_user", admin_block_user_handler))
-app.add_handler(CommandHandler("admin_unblock_user", admin_unblock_user_handler))
+    # Comandos principais
+    _app.add_handler(CommandHandler("start", start))
+    _app.add_handler(CommandHandler("menu", start))
+    _app.add_handler(CommandHandler("ajuda", ajuda))
+    _app.add_handler(CommandHandler("scan", scan_handler))
+    _app.add_handler(CommandHandler("stats", stats_handler))
+    _app.add_handler(CommandHandler("filtros", ver_filtros))
+    _app.add_handler(CommandHandler("bookmakers", escolher_bookmaker))
+    _app.add_handler(CallbackQueryHandler(callback_bookmaker, pattern="^bookmaker"))
+    _app.add_handler(CommandHandler("filtrosdata", filtros_data_handler))
+    _app.add_handler(CommandHandler("filtroshorario", filtros_horario_handler))
 
-# Comandos de filtro por região
-app.add_handler(CommandHandler("brasil", set_brasil))
-app.add_handler(CommandHandler("americasul", set_americasul))
-app.add_handler(CommandHandler("europa", set_europa))
-app.add_handler(CommandHandler("escandinavo", set_escandinavo))
-app.add_handler(CommandHandler("nortecentro", set_norte_centro))
-app.add_handler(CommandHandler("asia", set_asia))
-app.add_handler(CommandHandler("feminino", set_feminino))
-app.add_handler(CommandHandler("internacionais", set_internacionais))
-app.add_handler(CommandHandler("todos", set_todos))
+    # Comandos de bet tracking
+    _app.add_handler(CommandHandler("banca", banca_command))
+    _app.add_handler(CommandHandler("pendentes", pendentes_command))
+    _app.add_handler(CommandHandler("historico", historico_command))
 
-# Callbacks para interfaces de checkbox
-app.add_handler(CallbackQueryHandler(esporte_toggle_handler, pattern="^esporte_toggle\\|"))
-app.add_handler(CallbackQueryHandler(esporte_salvar_handler, pattern="^esporte_salvar$"))
-app.add_handler(CallbackQueryHandler(regiao_toggle_handler, pattern="^regiao_toggle\\|"))
-app.add_handler(CallbackQueryHandler(regiao_salvar_handler, pattern="^regiao_salvar$"))
+    # Callbacks de bet tracking (ANTES do callback_handler genérico)
+    _app.add_handler(CallbackQueryHandler(bet_yes_callback, pattern=r"^bet_yes:\d+$"))
+    _app.add_handler(CallbackQueryHandler(bet_no_callback, pattern=r"^bet_no:\d+$"))
+    _app.add_handler(CallbackQueryHandler(bet_result_win_callback, pattern=r"^bet_result_win:\d+$"))
+    _app.add_handler(CallbackQueryHandler(bet_result_loss_callback, pattern=r"^bet_result_loss:\d+$"))
+    _app.add_handler(CallbackQueryHandler(bet_result_push_callback, pattern=r"^bet_result_push:\d+$"))
+    _app.add_handler(CallbackQueryHandler(bet_cashout_callback, pattern=r"^bet_cashout:\d+$"))
+    _app.add_handler(CallbackQueryHandler(bet_postpone_callback, pattern=r"^bet_postpone:\d+$"))
 
-# Comando de filtro por esportes
-app.add_handler(CommandHandler("esportes", set_esportes))
+    # Text handler — bet tracking integrado no capturar_input_manual
+    _app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), capturar_input_manual))
 
-# Comando de personalização por ligas (com botões)
-app.add_handler(CommandHandler("ligas", ligas_handler))
-app.add_handler(CallbackQueryHandler(ligas_callback_handler, pattern="^liga_"))
+    #Comandos admin
+    _app.add_handler(CommandHandler("admin", admin_handler))
+    _app.add_handler(CommandHandler("admin_users", admin_users_handler))
+    _app.add_handler(CommandHandler("admin_stats", admin_stats_handler))
+    _app.add_handler(CommandHandler("admin_broadcast", admin_broadcast_handler))
+    _app.add_handler(CommandHandler("admin_block_user", admin_block_user_handler))
+    _app.add_handler(CommandHandler("admin_unblock_user", admin_unblock_user_handler))
 
-# Callbacks para filtros de data
-app.add_handler(CallbackQueryHandler(callback_data_dinamica, pattern="^data_dinamica\\|"))
-app.add_handler(CallbackQueryHandler(callback_data_estatica, pattern="^data_estatica$"))
-app.add_handler(CallbackQueryHandler(callback_data_remover, pattern="^data_remover$"))
+    # Comandos de filtro por região
+    _app.add_handler(CommandHandler("brasil", set_brasil))
+    _app.add_handler(CommandHandler("americasul", set_americasul))
+    _app.add_handler(CommandHandler("europa", set_europa))
+    _app.add_handler(CommandHandler("escandinavo", set_escandinavo))
+    _app.add_handler(CommandHandler("nortecentro", set_norte_centro))
+    _app.add_handler(CommandHandler("asia", set_asia))
+    _app.add_handler(CommandHandler("feminino", set_feminino))
+    _app.add_handler(CommandHandler("internacionais", set_internacionais))
+    _app.add_handler(CommandHandler("todos", set_todos))
 
-# Callbacks para filtros de horário
-app.add_handler(CallbackQueryHandler(callback_horario_preset, pattern="^horario_preset\\|"))
-app.add_handler(CallbackQueryHandler(callback_horario_custom, pattern="^horario_custom$"))
-app.add_handler(CallbackQueryHandler(callback_horario_remover, pattern="^horario_remover$"))
+    # Callbacks para interfaces de checkbox
+    _app.add_handler(CallbackQueryHandler(esporte_toggle_handler, pattern="^esporte_toggle\\|"))
+    _app.add_handler(CallbackQueryHandler(esporte_salvar_handler, pattern="^esporte_salvar$"))
+    _app.add_handler(CallbackQueryHandler(regiao_toggle_handler, pattern="^regiao_toggle\\|"))
+    _app.add_handler(CallbackQueryHandler(regiao_salvar_handler, pattern="^regiao_salvar$"))
 
-# Callbacks para esportes
-app.add_handler(CallbackQueryHandler(esporte_callback_handler, pattern="^esporte_"))
+    # Comando de filtro por esportes
+    _app.add_handler(CommandHandler("esportes", set_esportes))
 
-# Callbacks para limpeza
-app.add_handler(CallbackQueryHandler(limpar_callback_handler, pattern="^limpar_"))
+    # Comando de personalização por ligas (com botões)
+    _app.add_handler(CommandHandler("ligas", ligas_handler))
+    _app.add_handler(CallbackQueryHandler(ligas_callback_handler, pattern="^liga_"))
 
-# Botões interativos das regiões (start e presets) - DEVE SER O ÚLTIMO
-app.add_handler(CallbackQueryHandler(callback_handler))
+    # Callbacks para filtros de data
+    _app.add_handler(CallbackQueryHandler(callback_data_dinamica, pattern="^data_dinamica\\|"))
+    _app.add_handler(CallbackQueryHandler(callback_data_estatica, pattern="^data_estatica$"))
+    _app.add_handler(CallbackQueryHandler(callback_data_remover, pattern="^data_remover$"))
 
-# Comando inválido (fallback)
-app.add_handler(MessageHandler(filters.COMMAND, fallback_handler))
+    # Callbacks para filtros de horário
+    _app.add_handler(CallbackQueryHandler(callback_horario_preset, pattern="^horario_preset\\|"))
+    _app.add_handler(CallbackQueryHandler(callback_horario_custom, pattern="^horario_custom$"))
+    _app.add_handler(CallbackQueryHandler(callback_horario_remover, pattern="^horario_remover$"))
+
+    # Callbacks para esportes
+    _app.add_handler(CallbackQueryHandler(esporte_callback_handler, pattern="^esporte_"))
+
+    # Callbacks para limpeza
+    _app.add_handler(CallbackQueryHandler(limpar_callback_handler, pattern="^limpar_"))
+
+    # Botões interativos das regiões (start e presets) - DEVE SER O ÚLTIMO
+    _app.add_handler(CallbackQueryHandler(callback_handler))
+
+    # Comando inválido (fallback)
+    _app.add_handler(MessageHandler(filters.COMMAND, fallback_handler))
+
+    return _app
+
 
 if __name__ == "__main__":
     print("🚀 Bot EV+ iniciado!")
     print(f"📊 {len(filtros_por_chat)} usuários carregados")
-    app.run_polling()
+    get_app().run_polling()
