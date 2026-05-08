@@ -285,6 +285,11 @@ class Database:
             except Exception:
                 pass  # Coluna já existe
 
+            try:
+                conn.execute("ALTER TABLE bets_placed ADD COLUMN odd_apostada REAL DEFAULT NULL")
+            except Exception:
+                pass  # Coluna já existe
+
             # Índices para bets_placed
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_bets_chat

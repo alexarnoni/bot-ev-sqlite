@@ -40,7 +40,10 @@ def definir_stake(ev, odd):
     try:
         odd = float(odd)
     except (TypeError, ValueError):
-        return 0
+        return 0.1  # Era 0, agora retorna mínimo
+
+    if odd <= 0:
+        return 0.1  # Nova validação explícita
 
     if 1.50 <= odd <= 3.50:
         return 1.0

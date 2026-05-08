@@ -84,10 +84,10 @@ class BotScheduler:
             id='stats'
         )
         
-        # Job de lembrete pós-jogo a cada 15 minutos
+        # Job de lembrete pós-jogo a cada 2 horas
         self.scheduler.add_job(
             self.lembrete_pos_jogo_job,
-            IntervalTrigger(minutes=15),
+            IntervalTrigger(hours=2),
             id='lembrete_pos_jogo',
             max_instances=1,
             replace_existing=True,
@@ -332,40 +332,29 @@ class BotScheduler:
             logger_geral.error(f"❌ Erro ao coletar estatísticas: {e}")
     
     async def lembrete_pos_jogo_job(self):
-        """Job de lembrete pós-jogo — executa a cada 15 minutos."""
+        """Job consolidado — agrupa pendentes por chat_id, envia 1 msg por chat."""
         try:
-            from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+            from telegram import Bot
             from src.core.config import get_telegram_token
-            from src.utils.formatadores import formatar_data_brasileira
 
             pendentes = self.bets_tracker.get_pendentes_para_lembrete()
             if not pendentes:
                 return
 
+            # Agrupa por chat_id
+            por_chat: dict[str, int] = {}
+            for aposta in pendentes:
+                cid = aposta['chat_id']
+                por_chat[cid] = por_chat.get(cid, 0) + 1
+
             bot = Bot(token=get_telegram_token())
 
-            for aposta in pendentes:
-                chat_id = aposta['chat_id']
-                bet_id = aposta['id']
+            for chat_id, count in por_chat.items():
                 try:
-                    texto = self._formatar_lembrete(aposta)
-                    keyboard = self._montar_keyboard_resultado(bet_id)
-
-                    await bot.send_message(
-                        chat_id=int(chat_id),
-                        text=texto,
-                        parse_mode='HTML',
-                        reply_markup=keyboard,
-                        disable_web_page_preview=True,
-                    )
-                    self.bets_tracker.marcar_lembrete_enviado(bet_id)
-
+                    texto = f"⏰ Você tem {count} aposta(s) com resultado pendente. Use /pendentes para atualizar."
+                    await bot.send_message(chat_id=int(chat_id), text=texto)
                 except Exception as e:
-                    logger_geral.error(f"Falha lembrete bet_id={bet_id} chat_id={chat_id}: {e}")
-                    novo = self.bets_tracker.incrementar_tentativa_lembrete(bet_id)
-                    if novo >= 5:
-                        self.bets_tracker.marcar_resultado_expirado(bet_id)
-                        logger_geral.warning(f"Aposta bet_id={bet_id} expirada após {novo} tentativas")
+                    logger_geral.error(f"Falha lembrete consolidado chat_id={chat_id}: {e}")
                     continue
 
         except Exception as e:
@@ -380,43 +369,6 @@ class BotScheduler:
         except Exception as e:
             logger_geral.error(f"Erro no job expiracao_bets: {e}")
 
-    def _formatar_lembrete(self, aposta: dict) -> str:
-        """Formata mensagem de lembrete pós-jogo."""
-        from src.utils.formatadores import formatar_data_brasileira
-        home = aposta.get('home', '')
-        away = aposta.get('away', '')
-        league = aposta.get('league', '')
-        market = aposta.get('market_type', '')
-        odd = aposta.get('odd_alerta', 0)
-        valor = aposta.get('valor_apostado', 0)
-        ct = aposta.get('commence_time_ajustado') or aposta.get('commence_time', '')
-        data_fmt = formatar_data_brasileira(ct) if ct else "N/A"
-        return (
-            f"⏰ <b>Resultado pendente!</b>\n\n"
-            f"⚽ <b>{home} vs {away}</b>\n"
-            f"🏆 {league}\n"
-            f"📌 Mercado: {market}\n"
-            f"🔢 Odd: {odd:.2f}\n"
-            f"💰 Apostado: R$ {valor:.2f}\n"
-            f"🗓️ Jogo: {data_fmt}\n\n"
-            f"Qual foi o resultado?"
-        )
-
-    def _montar_keyboard_resultado(self, bet_id: int):
-        """Retorna keyboard com 5 botões de resultado."""
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-        return InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("🟢 Ganhei", callback_data=f"bet_result_win:{bet_id}"),
-                InlineKeyboardButton("🔴 Perdi", callback_data=f"bet_result_loss:{bet_id}"),
-                InlineKeyboardButton("⚪ Empate", callback_data=f"bet_result_push:{bet_id}"),
-            ],
-            [
-                InlineKeyboardButton("💸 Cashout", callback_data=f"bet_cashout:{bet_id}"),
-                InlineKeyboardButton("⏰ Adiar 3h", callback_data=f"bet_postpone:{bet_id}"),
-            ],
-        ])
-    
     def get_stats(self) -> dict:
         """Retorna estatísticas do scheduler"""
         return {

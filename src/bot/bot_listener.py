@@ -2975,6 +2975,33 @@ def _validar_valor(texto: str) -> float | None:
     return valor
 
 
+def _validar_odd(texto: str) -> float | None:
+    """Valida odd: deve ser float >= 1.01. Aceita vírgula como decimal."""
+    try:
+        odd = float(texto.replace(",", "."))
+        return odd if odd >= 1.01 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_valor_odd(texto: str) -> tuple[float | None, float | None]:
+    """
+    Parseia input do usuário no formato "VALOR" ou "VALOR ODD".
+    Retorna (valor, odd_apostada) ou (None, None) se inválido.
+    """
+    partes = texto.strip().split()
+    if len(partes) == 1:
+        valor = _validar_valor(partes[0])
+        return (valor, None) if valor else (None, None)
+    elif len(partes) == 2:
+        valor = _validar_valor(partes[0])
+        odd = _validar_odd(partes[1])
+        if valor and odd:
+            return (valor, odd)
+        return (None, None)
+    return (None, None)
+
+
 async def bet_yes_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback: usuário clicou ✅ Apostei"""
     query = update.callback_query
@@ -2993,7 +3020,7 @@ async def bet_yes_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         texto_original = query.message.text_html or query.message.text or ""
         await query.edit_message_text(
-            text=texto_original + "\n\n⏳ Aguardando valor da aposta...",
+            text=texto_original + "\n\n⏳ Valor apostado e odd (ex: 50 2.15):",
             parse_mode='HTML',
             disable_web_page_preview=True,
         )
@@ -3149,23 +3176,6 @@ async def bet_cashout_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data['_cashout_message'] = query.message
 
 
-async def bet_postpone_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Callback: usuário clicou ⏰ Adiar 3h"""
-    query = update.callback_query
-    bet_id = int(query.data.split(":")[1])
-
-    status = bets_tracker.get_bet_status(bet_id)
-    if status is None:
-        await query.answer("Aposta não encontrada", show_alert=True)
-        return
-    if status in STATUSES_FINAIS:
-        await query.answer("Esta aposta já foi registrada", show_alert=True)
-        return
-
-    bets_tracker.adiar_lembrete(bet_id)
-    await query.answer("Lembrete adiado por 3 horas", show_alert=False)
-
-
 async def bet_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handler de texto para capturar valor de aposta ou cashout.
@@ -3175,26 +3185,32 @@ async def bet_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bet_id_aposta = context.user_data.get('esperando_valor_aposta')
     if bet_id_aposta:
         texto = update.message.text.strip()
-        valor = _validar_valor(texto)
+        valor, odd_apostada = _parse_valor_odd(texto)
         if valor is None:
             await update.message.reply_text(
-                "❌ Valor inválido. Envie um número válido (ex: 50 ou 25,50):",
+                "❌ Valor inválido. Envie valor e odd (ex: 50 2.15) ou apenas valor (ex: 50):",
                 parse_mode='HTML',
             )
             return
 
-        bets_tracker.marcar_apostou(bet_id_aposta, valor)
+        bets_tracker.marcar_apostou(bet_id_aposta, valor, odd_apostada)
         context.user_data.pop('esperando_valor_aposta', None)
+
+        # Monta texto de confirmação
+        if odd_apostada is not None:
+            confirmacao = f"💰 R$ {valor:.2f} @ {odd_apostada}"
+        else:
+            confirmacao = f"💰 R$ {valor:.2f}"
 
         # Edita a mensagem original adicionando confirmação
         msg_original = context.user_data.pop('_bet_message', None)
         if msg_original:
             try:
                 texto_original = msg_original.text_html or msg_original.text or ""
-                # Remove "⏳ Aguardando valor da aposta..." e adiciona confirmação
-                texto_limpo = texto_original.replace("\n\n⏳ Aguardando valor da aposta...", "")
+                # Remove "⏳ Valor apostado e odd (ex: 50 2.15):" e adiciona confirmação
+                texto_limpo = texto_original.replace("\n\n⏳ Valor apostado e odd (ex: 50 2.15):", "")
                 await msg_original.edit_text(
-                    text=texto_limpo + f"\n\n💰 Apostado: R$ {valor:.2f}",
+                    text=texto_limpo + f"\n\n{confirmacao}",
                     parse_mode='HTML',
                     disable_web_page_preview=True,
                 )
@@ -3277,30 +3293,59 @@ async def banca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode='HTML')
 
 
+def _formatar_lembrete(aposta: dict) -> str:
+    """Formata mensagem de lembrete pós-jogo."""
+    from src.utils.formatadores import formatar_data_brasileira
+    home = aposta.get('home', '')
+    away = aposta.get('away', '')
+    league = aposta.get('league', '')
+    market = aposta.get('market_type', '')
+    odd = aposta.get('odd_alerta', 0)
+    valor = aposta.get('valor_apostado', 0)
+    ct = aposta.get('commence_time_ajustado') or aposta.get('commence_time', '')
+    data_fmt = formatar_data_brasileira(ct) if ct else "N/A"
+    return (
+        f"⏰ <b>Resultado pendente!</b>\n\n"
+        f"⚽ <b>{home} vs {away}</b>\n"
+        f"🏆 {league}\n"
+        f"📌 Mercado: {market}\n"
+        f"🔢 Odd: {odd:.2f}\n"
+        f"💰 Apostado: R$ {valor:.2f}\n"
+        f"🗓️ Jogo: {data_fmt}\n\n"
+        f"Qual foi o resultado?"
+    )
+
+
+def _montar_keyboard_resultado(bet_id: int):
+    """Retorna keyboard com botões de resultado (sem Adiar 3h)."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🟢 Ganhei", callback_data=f"bet_result_win:{bet_id}"),
+            InlineKeyboardButton("🔴 Perdi", callback_data=f"bet_result_loss:{bet_id}"),
+            InlineKeyboardButton("⚪ Empate", callback_data=f"bet_result_push:{bet_id}"),
+        ],
+        [
+            InlineKeyboardButton("💸 Cashout", callback_data=f"bet_cashout:{bet_id}"),
+        ],
+    ])
+
+
 async def pendentes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /pendentes — apostas aguardando resultado."""
     chat_id = str(update.effective_chat.id)
     pendentes = bets_tracker.get_pendentes(chat_id)
 
     if not pendentes:
-        await update.message.reply_text(
-            "📋 Nenhuma aposta pendente de resultado.",
-            parse_mode='HTML',
-        )
+        await update.message.reply_text("Nenhuma aposta pendente de resultado.")
         return
 
-    from src.utils.formatadores import formatar_data_brasileira
-    msg = "📋 <b>Apostas pendentes de resultado:</b>\n\n"
-    for ap in pendentes[:20]:
-        ct = ap.get('commence_time_ajustado') or ap.get('commence_time', '')
-        data_fmt = formatar_data_brasileira(ct) if ct else "N/A"
-        msg += (
-            f"⚽ {ap.get('home', '')} vs {ap.get('away', '')}\n"
-            f"   📌 {ap.get('market_type', '')} | Odd: {ap.get('odd_alerta', 0):.2f}\n"
-            f"   💰 R$ {ap.get('valor_apostado', 0):.2f} | 🗓️ {data_fmt}\n\n"
+    for aposta in pendentes:
+        texto = _formatar_lembrete(aposta)
+        keyboard = _montar_keyboard_resultado(aposta['id'])
+        await update.message.reply_text(
+            text=texto, parse_mode='HTML', reply_markup=keyboard
         )
-
-    await update.message.reply_text(msg, parse_mode='HTML')
 
 
 async def historico_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3369,7 +3414,6 @@ def get_app():
     _app.add_handler(CallbackQueryHandler(bet_result_loss_callback, pattern=r"^bet_result_loss:\d+$"))
     _app.add_handler(CallbackQueryHandler(bet_result_push_callback, pattern=r"^bet_result_push:\d+$"))
     _app.add_handler(CallbackQueryHandler(bet_cashout_callback, pattern=r"^bet_cashout:\d+$"))
-    _app.add_handler(CallbackQueryHandler(bet_postpone_callback, pattern=r"^bet_postpone:\d+$"))
 
     # Text handler — bet tracking integrado no capturar_input_manual
     _app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), capturar_input_manual))
