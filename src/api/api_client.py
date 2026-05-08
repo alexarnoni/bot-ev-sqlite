@@ -3,15 +3,15 @@ Cliente da Odds API para buscar eventos com EV+
 """
 import asyncio
 import aiohttp
+from aiohttp import ClientTimeout
 import time
 from typing import List, Dict, Optional
-from src.core.config import ODDS_API_KEY, ODDS_API_BASE, RATE_LIMIT_REQUESTS_PER_HOUR
+from src.core.config import ODDS_API_KEY, ODDS_API_BASE
 from src.core.database import get_db, generate_alert_hash
 from src.utils.metrics import record_api_request, measure_time
-from src.api.rate_limiter_global import get_global_rate_limiter
 from src.core.logging_config import get_api_logger
 from src.utils.messages import (
-    api_offline, rate_limit, invalid_bookmaker, 
+    api_offline, invalid_bookmaker, 
     no_events, high_ev_alert
 )
 
@@ -21,26 +21,16 @@ class OddsAPI:
         if not self.api_key:
             raise ValueError("❌ ODDS_API_KEY não configurada no .env")
         self.base_url = ODDS_API_BASE
-        self.rate_limit = RATE_LIMIT_REQUESTS_PER_HOUR
         self.db = get_db()
-        self.global_rl = get_global_rate_limiter()
         self.logger = get_api_logger()
         # Log API key initialization with masking
+        self.timeout = ClientTimeout(total=30)
         self.logger.info(f"✅ API Client inicializada (key: {self.api_key[:8]}...)")
         # Lista de bookmakers suportados pela integração atual
         self.allowed_bookmakers = [
             'Bet365', 'Betfair Sportsbook', 'Novibet', 'Superbet', 'BetMGM', 'Betano',
             'Betsson'
         ]
-    
-    def _check_rate_limit(self) -> bool:
-        """Verifica se pode fazer requisição sem exceder rate limit"""
-        requests_last_hour = self.db.get_request_count_last_hour()
-        return requests_last_hour < self.rate_limit
-    
-    def _log_request(self):
-        """Registra requisição para rate limiting"""
-        self.db.add_request_log()
     
     def _parse_float(self, value) -> Optional[float]:
         """Converte string para float de forma segura"""
@@ -135,19 +125,6 @@ class OddsAPI:
     @measure_time('api_request')
     async def get_value_bets(self, bookmakers: List[str]) -> List[Dict]:
         """Busca apostas com valor (EV+) para bookmakers específicos"""
-        # Rate limit GLOBAL primeiro
-        try:
-            if not self.global_rl.can_make_request():
-                self.logger.warning("Rate limit global atingido, pulando requisição")
-                self.db.set_api_status(False, "Rate limit global atingido", "429")
-                return []
-        except Exception:
-            pass
-
-        if not self._check_rate_limit():
-            self.logger.warning("Rate limit atingido, aguardando...")
-            return []
-        
         # Normaliza input: aceita string única com vírgulas ou lista; filtra inválidos e remove duplicatas
         if isinstance(bookmakers, str):
             bookmakers = [b.strip() for b in bookmakers.split(',') if b.strip()]
@@ -160,83 +137,74 @@ class OddsAPI:
         if not valid_bookmakers:
             valid_bookmakers = ['Bet365']
         
-        # Requisição com retries/backoff
+        # Requisição com retries/backoff - uma requisição por bookmaker
+        all_eventos = []
         url = f"{self.base_url}/value-bets"
-        params = {
-            'apiKey': self.api_key,
-            'bookmaker': ','.join(valid_bookmakers),  # ✅ OBRIGATÓRIO
-            'includeEventDetails': 'true'
-        }
-
         max_attempts = 3
         base_delay = 0.5
+        last_error = None
 
-        for attempt in range(1, max_attempts + 1):
-            try:
-                # Log nos dois limiters
-                self._log_request()
+        for bookmaker in valid_bookmakers:
+            params = {
+                'apiKey': self.api_key,
+                'bookmaker': bookmaker,  # singular - uma requisição por bookmaker
+                'includeEventDetails': 'true'
+            }
+
+            for attempt in range(1, max_attempts + 1):
                 try:
-                    self.global_rl.log_request(endpoint='/value-bets', api_key=self.api_key[:8])
-                except Exception:
-                    pass
+                    async with aiohttp.ClientSession() as session:
+                        start_time = time.time()
+                        async with session.get(url, params=params, timeout=self.timeout) as response:
+                            duration = time.time() - start_time
+                            record_api_request(duration, response.status, '/value-bets')
 
-                async with aiohttp.ClientSession() as session:
-                    start_time = time.time()
-                    async with session.get(url, params=params) as response:
-                        duration = time.time() - start_time
-                        record_api_request(duration, response.status, '/value-bets')
-                        
-                        if response.status == 200:
-                            data = await response.json()
-                            eventos = []
-                            items = data if isinstance(data, list) else data.get('data', [])
-                            for bet in items:
-                                evento = self.__parse_evento(bet)
-                                if evento:
-                                    eventos.append(evento)
-                            self.logger.info(f"API: {len(eventos)} eventos encontrados")
-                            self.db.set_api_status(True, "OK", f"{len(eventos)} eventos")
-                            return eventos
+                            if response.status == 200:
+                                data = await response.json()
+                                items = data if isinstance(data, list) else data.get('data', [])
+                                for bet in items:
+                                    evento = self.__parse_evento(bet)
+                                    if evento:
+                                        all_eventos.append(evento)
+                                break  # success, move to next bookmaker
 
-                        if response.status in (429, 500, 502, 503, 504):
-                            # Backoff e nova tentativa
-                            delay = base_delay * (2 ** (attempt - 1))
-                            await asyncio.sleep(delay)
-                            continue
+                            if response.status in (429, 500, 502, 503, 504):
+                                delay = base_delay * (2 ** (attempt - 1))
+                                await asyncio.sleep(delay)
+                                continue
 
-                        # Erros tratados específicos
-                        error_text = await response.text()
-                        if response.status == 401:
-                            self.logger.error(f"API Key inválida: {error_text}")
-                            self.db.set_api_status(False, "API Key inválida", error_text)
-                            return []
-                        if response.status == 400:
-                            self.logger.error(f"Bad Request: {error_text}")
-                            self.db.set_api_status(False, "Bad Request", error_text)
-                            return []
+                            error_text = await response.text()
+                            if response.status == 401:
+                                self.logger.error(f"API Key inválida: {error_text}")
+                                self.db.set_api_status(False, "API Key inválida", error_text)
+                                return all_eventos  # stop entirely on auth failure
+                            if response.status == 400:
+                                self.logger.error(f"Bad Request para {bookmaker}: {error_text}")
+                                last_error = error_text
+                                break  # skip this bookmaker
 
-                        # Outros erros
-                        self.logger.error(f"Erro {response.status}: {error_text}")
-                        self.db.set_api_status(False, f"Erro HTTP {response.status}", error_text)
-                        return []
+                            self.logger.error(f"Erro {response.status} para {bookmaker}: {error_text}")
+                            last_error = error_text
+                            break  # skip this bookmaker
 
-            except Exception as e:
-                # Erro de rede/timeout: backoff
-                delay = base_delay * (2 ** (attempt - 1))
-                await asyncio.sleep(delay)
-                if attempt == max_attempts:
-                    self.logger.error(f"Erro na requisição: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    self.db.set_api_status(False, "Erro de conexão", str(e))
-                    return []
+                except Exception as e:
+                    delay = base_delay * (2 ** (attempt - 1))
+                    await asyncio.sleep(delay)
+                    if attempt == max_attempts:
+                        self.logger.error(f"Erro na requisição para {bookmaker}: {e}")
+                        last_error = str(e)
+
+        # Final status update
+        if all_eventos:
+            self.logger.info(f"API: {len(all_eventos)} eventos encontrados (total)")
+            self.db.set_api_status(True, "OK", f"{len(all_eventos)} eventos")
+        elif last_error:
+            self.db.set_api_status(False, "Erro de conexão", str(last_error))
+
+        return all_eventos
         
     async def get_eventos_geral(self, bookmaker: str) -> List[Dict]:
         """Busca eventos gerais para um bookmaker específico"""
-        if not self._check_rate_limit():
-            self.logger.warning("Rate limit atingido, aguardando...")
-            return []
-        
         # Validação do bookmaker individual
         if bookmaker not in self.allowed_bookmakers:
             self.logger.warning(invalid_bookmaker(bookmaker))
@@ -253,14 +221,8 @@ class OddsAPI:
         base_delay = 0.5
         for attempt in range(1, max_attempts + 1):
             try:
-                self._log_request()
-                try:
-                    self.global_rl.log_request(endpoint='/value-bets', api_key=self.api_key[:8])
-                except Exception:
-                    pass
-
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(url, params=params) as response:
+                    async with session.get(url, params=params, timeout=self.timeout) as response:
                         if response.status == 200:
                             data = await response.json()
                             eventos = []
@@ -288,18 +250,13 @@ class OddsAPI:
         """
         Busca lista de bookmakers ativos que a API está fornecendo dados
         """
-        if not self._check_rate_limit():
-            return []
-        
         try:
-            self._log_request()
-            
             # Endpoint para buscar bookmakers disponíveis
             url = f"{self.base_url}/sports"
             params = {'apiKey': self.api_key}
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
+                async with session.get(url, params=params, timeout=self.timeout) as response:
                     if response.status == 200:
                         data = await response.json()
                         # A API retorna esportes, vamos usar lista fixa dos principais bookmakers

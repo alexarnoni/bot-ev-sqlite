@@ -103,24 +103,6 @@ async def scan_apostas_usuario(chat_id: str):
         # Calcula momento do scan uma vez para consistência
         momento_scan = datetime.now(timezone.utc)
         
-        # Verifica status da API
-        if not await get_odds_api_status():
-            logger.warning("⚠️ API offline, pulando scan")
-            return api_offline()
-        
-        # Verifica rate limit GLOBAL primeiro
-        try:
-            if not get_global_rate_limiter().can_make_request():
-                logger.warning("⚠️ Rate limit global atingido, pulando scan")
-                return global_rate_limit()
-        except Exception:
-            pass
-
-        # Verifica rate limit local/por feed
-        if not await api_rate_limiter.can_make_request():
-            logger.warning("⚠️ Rate limit atingido, pulando scan")
-            return scan_rate_limit()
-        
         # Busca dados do usuário específico
         usuario = await _buscar_usuario_especifico(chat_id)
         if not usuario:
@@ -136,8 +118,28 @@ async def scan_apostas_usuario(chat_id: str):
             apostas = snapshot.get('eventos') or []
             logger.info("🧠 /scan usando snapshot global recente (sem chamada à API)")
         else:
+            # Verificações SÓ quando precisa chamar a API
+            # Verifica status da API
+            if not await get_odds_api_status():
+                logger.warning("⚠️ API offline, pulando scan")
+                return api_offline()
+            
+            # Verifica rate limit GLOBAL primeiro
+            try:
+                if not get_global_rate_limiter().can_make_request():
+                    logger.warning("⚠️ Rate limit global atingido, pulando scan")
+                    return global_rate_limit()
+            except Exception:
+                pass
+
+            # Verifica rate limit local/por feed
+            if not await api_rate_limiter.can_make_request():
+                logger.warning("⚠️ Rate limit atingido, pulando scan")
+                return scan_rate_limit()
+            
             # Busca apostas da API com base nos bookmakers do usuário
             apostas = await _buscar_apostas_api([usuario])
+            
         if not apostas:
             logger.info("📭 Nenhuma aposta encontrada na API")
             return no_events()

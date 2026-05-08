@@ -169,10 +169,10 @@ class BetsTracker:
             return row['status'] if row else None
 
     # --- Atualização de status ---
-    def marcar_apostou(self, bet_id: int, valor: float) -> None:
+    def marcar_apostou(self, bet_id: int, valor: float, odd_apostada: float | None = None) -> None:
         """
-        UPDATE valor_apostado e timestamp_apostou.
-        Não altera status (permanece 'pendente').
+        UPDATE valor_apostado, odd_apostada e timestamp_apostou.
+        Se odd_apostada for None, copia odd_alerta do registro.
         Levanta StatusFinalError se a aposta já tem status final.
         """
         status = self.get_bet_status(bet_id)
@@ -180,11 +180,18 @@ class BetsTracker:
             raise StatusFinalError(f"Aposta {bet_id} já tem status final: {status}")
 
         with self.db.get_connection() as conn:
+            if odd_apostada is None:
+                # Fallback: copia odd_alerta
+                row = conn.execute(
+                    "SELECT odd_alerta FROM bets_placed WHERE id = ?", (bet_id,)
+                ).fetchone()
+                odd_apostada = row['odd_alerta'] if row else None
+
             conn.execute("""
                 UPDATE bets_placed
-                SET valor_apostado = ?, timestamp_apostou = ?
+                SET valor_apostado = ?, odd_apostada = ?, timestamp_apostou = ?
                 WHERE id = ?
-            """, (valor, now_utc_str(), bet_id))
+            """, (valor, odd_apostada, now_utc_str(), bet_id))
 
     def marcar_pulei(self, bet_id: int) -> None:
         """
@@ -218,11 +225,11 @@ class BetsTracker:
 
         with self.db.get_connection() as conn:
             row = conn.execute(
-                "SELECT odd_alerta, valor_apostado FROM bets_placed WHERE id = ?",
+                "SELECT odd_alerta, odd_apostada, valor_apostado FROM bets_placed WHERE id = ?",
                 (bet_id,)
             ).fetchone()
 
-            odd = row['odd_alerta'] if row else 0
+            odd = (row['odd_apostada'] or row['odd_alerta']) if row else 0
             valor_apostado = row['valor_apostado'] if row else 0
 
             lucro = calcular_lucro(odd, valor_apostado or 0, resultado, valor_cashout)
@@ -296,42 +303,7 @@ class BetsTracker:
                 WHERE id = ?
             """, (now_utc_str(), bet_id))
 
-    def adiar_lembrete(self, bet_id: int) -> None:
-        """
-        Avança commence_time_ajustado em +3h e limpa timestamp_lembrete_enviado.
-        commence_time original permanece inalterado.
-        Levanta StatusFinalError se a aposta já tem status final.
-        """
-        status = self.get_bet_status(bet_id)
-        if status in STATUSES_FINAIS:
-            raise StatusFinalError(f"Aposta {bet_id} já tem status final: {status}")
 
-        with self.db.get_connection() as conn:
-            row = conn.execute(
-                "SELECT commence_time, commence_time_ajustado FROM bets_placed WHERE id = ?",
-                (bet_id,)
-            ).fetchone()
-
-            if not row:
-                return
-
-            ct = row['commence_time_ajustado'] or row['commence_time']
-            if not ct:
-                return
-
-            # Parse e avança 3h
-            if 'T' in ct:
-                base_time = datetime.fromisoformat(ct.replace('Z', '+00:00'))
-            else:
-                base_time = datetime.strptime(ct, TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc)
-
-            novo_ct = (base_time + timedelta(hours=3)).strftime(TIMESTAMP_FORMAT)
-
-            conn.execute("""
-                UPDATE bets_placed
-                SET commence_time_ajustado = ?, timestamp_lembrete_enviado = NULL
-                WHERE id = ?
-            """, (novo_ct, bet_id))
 
     def incrementar_tentativa_lembrete(self, bet_id: int) -> int:
         """

@@ -182,60 +182,6 @@ class TestProperty5IdempotenciaStatusFinal:
         with pytest.raises(StatusFinalError):
             tracker.marcar_resultado(bet_id, "cashout", valor_cashout=80.0)
 
-    def test_5_6_bet_postpone_em_status_final(self, tracker, dados_alerta_base):
-        """Caso 5.6: adiar_lembrete em aposta já finalizada → StatusFinalError."""
-        bet_id = self._criar_aposta_finalizada(tracker, dados_alerta_base)
-        with pytest.raises(StatusFinalError):
-            tracker.adiar_lembrete(bet_id)
-
-
-# ============================================================
-# Property 3: Adiar lembrete preserva commence_time original
-# ============================================================
-
-class TestProperty3AdiarPreservaCommenceTime:
-    """Property 3: adiar_lembrete() preserva commence_time original."""
-
-    def _criar_aposta_pendente(self, tracker, db, dados_alerta_base):
-        """Helper: cria aposta pendente com valor apostado."""
-        alert_hash = gerar_alert_hash(
-            "123", "Flamengo", "Palmeiras", "h2h", "home", "Bet365", "2025-01-15 20:00:00"
-        )
-        bet_id = tracker.registrar_alerta(alert_hash, "123", "feed1", dados_alerta_base)
-        tracker.marcar_apostou(bet_id, 100.0)
-        return bet_id
-
-    def test_3_1_um_adiamento(self, tracker, db, dados_alerta_base):
-        """Caso 3.1: 1 adiamento preserva commence_time, ajusta commence_time_ajustado."""
-        bet_id = self._criar_aposta_pendente(tracker, db, dados_alerta_base)
-        tracker.adiar_lembrete(bet_id)
-
-        with db.get_connection() as conn:
-            row = conn.execute("SELECT commence_time, commence_time_ajustado FROM bets_placed WHERE id = ?", (bet_id,)).fetchone()
-
-        assert row['commence_time'] == "2025-01-15 20:00:00"
-        assert row['commence_time_ajustado'] == "2025-01-15 23:00:00"
-
-    def test_3_2_tres_adiamentos(self, tracker, db, dados_alerta_base):
-        """Caso 3.2: 3 adiamentos → commence_time inalterado, ajustado = +9h."""
-        bet_id = self._criar_aposta_pendente(tracker, db, dados_alerta_base)
-        tracker.adiar_lembrete(bet_id)
-        tracker.adiar_lembrete(bet_id)
-        tracker.adiar_lembrete(bet_id)
-
-        with db.get_connection() as conn:
-            row = conn.execute("SELECT commence_time, commence_time_ajustado FROM bets_placed WHERE id = ?", (bet_id,)).fetchone()
-
-        assert row['commence_time'] == "2025-01-15 20:00:00"
-        assert row['commence_time_ajustado'] == "2025-01-16 05:00:00"
-
-    def test_3_3_adiar_apos_resultado(self, tracker, db, dados_alerta_base):
-        """Caso 3.3: Adiar após resultado registrado → StatusFinalError."""
-        bet_id = self._criar_aposta_pendente(tracker, db, dados_alerta_base)
-        tracker.marcar_resultado(bet_id, "ganhou")
-        with pytest.raises(StatusFinalError):
-            tracker.adiar_lembrete(bet_id)
-
 
 # ============================================================
 # Property 4: get_resumo exclui status não-finalizados
@@ -338,3 +284,83 @@ class TestProperty6ValidacaoMonetaria:
     def test_6_10_multiplas_virgulas(self):
         """Caso 6.10: '50,5,5' → inválido"""
         assert validar_valor("50,5,5") is None
+
+
+# ============================================================
+# Tests: odd_apostada — Registro e cálculo de lucro
+# Validates: Requirements 2.1, 2.2, 3.1, 3.2
+# ============================================================
+
+class TestOddApostada:
+    """Testes para o campo odd_apostada em marcar_apostou e marcar_resultado."""
+
+    def _criar_aposta(self, tracker, dados_alerta_base, odd_alerta=2.0):
+        """Helper: cria aposta pendente e retorna bet_id."""
+        dados = {**dados_alerta_base, "odd_alerta": odd_alerta}
+        alert_hash = gerar_alert_hash(
+            "123", "Flamengo", "Palmeiras", "h2h", "home", "Bet365", "2025-01-15 20:00:00"
+        )
+        return tracker.registrar_alerta(alert_hash, "123", "feed1", dados)
+
+    def test_marcar_apostou_com_odd_apostada(self, tracker, db, dados_alerta_base):
+        """Req 2.1: marcar_apostou com odd_apostada=2.15 → campo salvo corretamente."""
+        bet_id = self._criar_aposta(tracker, dados_alerta_base, odd_alerta=2.0)
+        tracker.marcar_apostou(bet_id, 100.0, odd_apostada=2.15)
+
+        with db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT odd_apostada, valor_apostado FROM bets_placed WHERE id = ?",
+                (bet_id,)
+            ).fetchone()
+
+        assert row['odd_apostada'] == 2.15
+        assert row['valor_apostado'] == 100.0
+
+    def test_marcar_apostou_sem_odd_apostada_usa_odd_alerta(self, tracker, db, dados_alerta_base):
+        """Req 2.2: marcar_apostou com odd_apostada=None → campo recebe odd_alerta."""
+        bet_id = self._criar_aposta(tracker, dados_alerta_base, odd_alerta=1.85)
+        tracker.marcar_apostou(bet_id, 50.0, odd_apostada=None)
+
+        with db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT odd_apostada, odd_alerta FROM bets_placed WHERE id = ?",
+                (bet_id,)
+            ).fetchone()
+
+        assert row['odd_apostada'] == 1.85
+        assert row['odd_alerta'] == 1.85
+
+    def test_marcar_resultado_usa_odd_apostada(self, tracker, db, dados_alerta_base):
+        """Req 3.1: marcar_resultado com odd_apostada definida → lucro usa odd_apostada."""
+        bet_id = self._criar_aposta(tracker, dados_alerta_base, odd_alerta=2.0)
+        tracker.marcar_apostou(bet_id, 100.0, odd_apostada=2.50)
+        tracker.marcar_resultado(bet_id, "ganhou")
+
+        with db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT lucro FROM bets_placed WHERE id = ?", (bet_id,)
+            ).fetchone()
+
+        # lucro = (odd_apostada - 1) * valor = (2.50 - 1) * 100 = 150.0
+        assert row['lucro'] == pytest.approx(150.0)
+
+    def test_marcar_resultado_fallback_odd_alerta(self, tracker, db, dados_alerta_base):
+        """Req 3.2: marcar_resultado com odd_apostada NULL → lucro usa odd_alerta."""
+        bet_id = self._criar_aposta(tracker, dados_alerta_base, odd_alerta=2.0)
+
+        # Simula aposta sem odd_apostada (campo fica NULL no banco)
+        with db.get_connection() as conn:
+            conn.execute(
+                "UPDATE bets_placed SET valor_apostado = ?, odd_apostada = NULL WHERE id = ?",
+                (100.0, bet_id)
+            )
+
+        tracker.marcar_resultado(bet_id, "ganhou")
+
+        with db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT lucro FROM bets_placed WHERE id = ?", (bet_id,)
+            ).fetchone()
+
+        # lucro = (odd_alerta - 1) * valor = (2.0 - 1) * 100 = 100.0
+        assert row['lucro'] == pytest.approx(100.0)
