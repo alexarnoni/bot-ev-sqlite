@@ -127,6 +127,8 @@ class AlertSender:
             bookmaker = aposta.get('bookmaker', '')
             commence_time = aposta.get('commence_time', '')
             
+            # Calcula stake
+            stake = definir_stake(ev, odds)
             # Formata valores
             ev_pct = formatar_ev(ev)
             odds_fmt = formatar_odd(odds)
