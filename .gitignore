@@ -65,3 +65,9 @@ backup_*/
 # Temporary files
 *.tmp
 *.temp
+
+# Kiro specs (local development only)
+.kiro/
+
+# Hypothesis cache
+.hypothesis/
