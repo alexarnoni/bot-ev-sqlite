@@ -3398,7 +3398,7 @@ def _formatar_lembrete(aposta: dict) -> str:
     home = aposta.get('home', '')
     away = aposta.get('away', '')
     league = aposta.get('league', '')
-    market = aposta.get('market_type', '')
+    market = aposta.get('market_name_fmt') or aposta.get('market_type', '')
     odd = aposta.get('odd_apostada') or aposta.get('odd_alerta', 0)
     valor = aposta.get('valor_apostado', 0)
     ct = aposta.get('commence_time_ajustado') or aposta.get('commence_time', '')
@@ -3460,13 +3460,16 @@ async def historico_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     status_emoji = {"ganhou": "🟢", "perdeu": "🔴", "empate": "⚪", "cashout": "💸"}
-    msg = "📜 <b>Últimas apostas finalizadas:</b>\n\n"
+    data_fim = datetime.now(timezone.utc)
+    periodo = f"até {data_fim.strftime('%d/%m/%Y')}"
+    msg = f"📜 <b>Últimas 20 apostas finalizadas</b>\n📅 {periodo}\n\n"
     for ap in historico:
         emoji = status_emoji.get(ap.get('status', ''), '❓')
         odd_exibir = ap.get('odd_apostada') or ap.get('odd_alerta', 0)
+        mercado = ap.get('market_name_fmt') or ap.get('market_type', '')
         msg += (
             f"{emoji} {ap.get('home', '')} vs {ap.get('away', '')}\n"
-            f"   Odd: {odd_exibir:.2f} | R$ {ap.get('valor_apostado', 0):.2f}"
+            f"   📌 {mercado} | Odd: {odd_exibir:.2f} | R$ {ap.get('valor_apostado', 0):.2f}"
             f" | Lucro: R$ {ap.get('lucro', 0):+.2f}\n\n"
         )
 
