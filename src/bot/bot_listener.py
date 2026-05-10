@@ -3218,8 +3218,9 @@ async def bet_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bets_tracker.marcar_apostou(bet_id_aposta, valor, odd_apostada=odd_apostada)
         context.user_data.pop('esperando_valor_aposta', None)
 
-        # Monta texto de confirmação
-        confirmacao = f"💰 R$ {valor:.2f} @ {odd_apostada}" if odd_apostada else f"💰 R$ {valor:.2f}"
+        # Monta texto de confirmação (sempre exibe odd — fallback para odd_alerta)
+        odd_exibir = odd_apostada or bets_tracker.get_odd_alerta(bet_id_aposta)
+        confirmacao = f"💰 R$ {valor:.2f} @ {odd_exibir:.2f}"
 
         # Edita a mensagem original adicionando confirmação
         msg_original = context.user_data.pop('_bet_message', None)
@@ -3236,11 +3237,7 @@ async def bet_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
 
-        if odd_apostada:
-            texto_confirmacao = f"✅ Aposta registrada — R$ {valor:.2f} @ {odd_apostada:.2f}"
-        else:
-            texto_confirmacao = f"✅ Aposta registrada — R$ {valor:.2f}"
-        await update.message.reply_text(texto_confirmacao, parse_mode='HTML')
+        await update.message.reply_text(f"✅ Aposta registrada — R$ {valor:.2f} @ {odd_exibir:.2f}", parse_mode='HTML')
         return
 
     # Fluxo: esperando valor de cashout

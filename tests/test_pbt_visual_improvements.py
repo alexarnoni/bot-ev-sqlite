@@ -21,12 +21,10 @@ from hypothesis import strategies as st
 # ============================================================
 
 
-def formatar_confirmacao(valor: float, odd_apostada=None) -> str:
+def formatar_confirmacao(valor: float, odd_apostada=None, odd_alerta_fallback=0.0) -> str:
     """Replica a lógica de confirmação de aposta em bet_text_handler."""
-    if odd_apostada:
-        return f"✅ Aposta registrada — R$ {valor:.2f} @ {odd_apostada:.2f}"
-    else:
-        return f"✅ Aposta registrada — R$ {valor:.2f}"
+    odd_exibir = odd_apostada or odd_alerta_fallback
+    return f"✅ Aposta registrada — R$ {valor:.2f} @ {odd_exibir:.2f}"
 
 
 def calcular_bloco_ev(aposta: dict) -> str:
@@ -134,9 +132,8 @@ st_mercado = st.text(
 class TestProperty1FormatoConfirmacao:
     """
     Property 1: Formato da mensagem de confirmação.
-    Para qualquer valor positivo e qualquer odd_apostada (positiva ou None),
-    a mensagem de confirmação SHALL conter "R$ {valor:.2f}" e SHALL conter
-    "@ {odd_apostada:.2f}" se e somente se odd_apostada não for None.
+    Para qualquer valor positivo e qualquer odd (apostada ou fallback),
+    a mensagem de confirmação SHALL sempre conter "R$ {valor:.2f}" e "@ {odd:.2f}".
 
     **Validates: Requirements 1.1, 1.2**
     """
@@ -145,21 +142,20 @@ class TestProperty1FormatoConfirmacao:
     @given(
         valor=st_valor,
         odd_apostada=st_odd_apostada,
+        odd_alerta_fallback=st_odd,
     )
-    def test_formato_confirmacao(self, valor, odd_apostada):
-        """Mensagem contém valor formatado e odd sse odd não é None."""
-        resultado = formatar_confirmacao(valor, odd_apostada)
+    def test_formato_confirmacao(self, valor, odd_apostada, odd_alerta_fallback):
+        """Mensagem sempre contém valor e odd formatados."""
+        resultado = formatar_confirmacao(valor, odd_apostada, odd_alerta_fallback)
 
         # Sempre deve conter o valor formatado
         valor_fmt = f"R$ {valor:.2f}"
         assert valor_fmt in resultado
 
-        # Deve conter "@ {odd:.2f}" sse odd_apostada não é None
-        if odd_apostada is not None:
-            odd_fmt = f"@ {odd_apostada:.2f}"
-            assert odd_fmt in resultado
-        else:
-            assert "@ " not in resultado
+        # Sempre deve conter "@ " com a odd (apostada ou fallback)
+        odd_esperada = odd_apostada if odd_apostada else odd_alerta_fallback
+        odd_fmt = f"@ {odd_esperada:.2f}"
+        assert odd_fmt in resultado
 
 
 # ============================================================

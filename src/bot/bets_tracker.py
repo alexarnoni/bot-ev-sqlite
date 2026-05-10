@@ -458,6 +458,14 @@ class BetsTracker:
             ).fetchone()
             return dict(row) if row else None
 
+    def get_odd_alerta(self, bet_id: int) -> float:
+        """Retorna odd_alerta de uma aposta pelo ID. Retorna 0.0 se não encontrada."""
+        with self.db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT odd_alerta FROM bets_placed WHERE id = ?", (bet_id,)
+            ).fetchone()
+            return row['odd_alerta'] if row and row['odd_alerta'] else 0.0
+
     def resetar_banca(self, chat_id: str) -> None:
         """Apaga todas as apostas e configuração de bankroll do usuário."""
         with self.db.get_connection() as conn:
