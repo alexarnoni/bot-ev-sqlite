@@ -3236,7 +3236,11 @@ async def bet_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
 
-        await update.message.reply_text(f"✅ Aposta de R$ {valor:.2f} registrada!", parse_mode='HTML')
+        if odd_apostada:
+            texto_confirmacao = f"✅ Aposta registrada — R$ {valor:.2f} @ {odd_apostada:.2f}"
+        else:
+            texto_confirmacao = f"✅ Aposta registrada — R$ {valor:.2f}"
+        await update.message.reply_text(texto_confirmacao, parse_mode='HTML')
         return
 
     # Fluxo: esperando valor de cashout
@@ -3407,6 +3411,24 @@ def _formatar_lembrete(aposta: dict) -> str:
     valor = aposta.get('valor_apostado', 0)
     ct = aposta.get('commence_time_ajustado') or aposta.get('commence_time', '')
     data_fmt = formatar_data_brasileira(ct) if ct else "N/A"
+
+    # Bloco comparativo de EV
+    ev_alerta = aposta.get('ev_alerta', 0) or 0
+    odd_alerta_val = aposta.get('odd_alerta', 0) or 0
+    odd_apostada_val = aposta.get('odd_apostada')
+
+    bloco_ev = ""
+    if (odd_apostada_val is not None
+        and odd_apostada_val != odd_alerta_val
+        and odd_alerta_val > 0
+        and (1 + ev_alerta) > 0):
+        prob_implicita = 1 / (odd_alerta_val / (1 + ev_alerta))
+        ev_real = (odd_apostada_val * prob_implicita) - 1
+        bloco_ev = (
+            f"\n📊 Odd alerta: {odd_alerta_val:.2f} → Odd apostada: {odd_apostada_val:.2f}\n"
+            f"📈 EV original: {ev_alerta*100:.1f}% → EV real: {ev_real*100:.1f}%\n"
+        )
+
     return (
         f"⏰ <b>Resultado pendente!</b>\n\n"
         f"⚽ <b>{home} vs {away}</b>\n"
@@ -3414,7 +3436,8 @@ def _formatar_lembrete(aposta: dict) -> str:
         f"📌 Mercado: {market}\n"
         f"🔢 Odd: {odd:.2f}\n"
         f"💰 Apostado: R$ {valor:.2f}\n"
-        f"🗓️ Jogo: {data_fmt}\n\n"
+        f"🗓️ Jogo: {data_fmt}\n"
+        f"{bloco_ev}\n"
         f"Qual foi o resultado?"
     )
 
@@ -3471,6 +3494,7 @@ async def historico_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_fim = datetime.now(timezone.utc)
     periodo = f"até {data_fim.strftime('%d/%m/%Y')}"
     msg = f"📜 <b>Últimas 20 apostas finalizadas</b>\n📅 {periodo}\n\n"
+    separador = "─────────────────"
     for ap in historico:
         emoji = status_emoji.get(ap.get('status', ''), '❓')
         odd_exibir = ap.get('odd_apostada') or ap.get('odd_alerta', 0)
@@ -3478,7 +3502,8 @@ async def historico_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += (
             f"{emoji} {ap.get('home', '')} vs {ap.get('away', '')}\n"
             f"   📌 {mercado} | Odd: {odd_exibir:.2f} | R$ {ap.get('valor_apostado', 0):.2f}"
-            f" | Lucro: R$ {ap.get('lucro', 0):+.2f}\n\n"
+            f" | Lucro: R$ {ap.get('lucro', 0):+.2f}\n"
+            f"{separador}\n\n"
         )
 
     await update.message.reply_text(msg, parse_mode='HTML')
