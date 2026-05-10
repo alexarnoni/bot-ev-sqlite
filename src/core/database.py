@@ -290,6 +290,11 @@ class Database:
             except Exception:
                 pass  # Coluna já existe
 
+            try:
+                conn.execute("ALTER TABLE bets_placed ADD COLUMN market_name_fmt TEXT DEFAULT NULL")
+            except Exception:
+                pass
+
             # 14. Tabela user_bankroll (gestão de banca por usuário)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_bankroll (

@@ -87,6 +87,15 @@ class AlertSender:
             }
             bet_id = self._bets_tracker.registrar_alerta(alert_hash, chat_id_str, FEED_ID, dados_alerta)
 
+            # Salvar nome do mercado formatado
+            from src.utils.formatadores import formatar_market_name
+            mercado_fmt = formatar_market_name(aposta.get('market_type', ''), aposta=aposta)
+            with self._bets_tracker.db.get_connection() as conn:
+                conn.execute(
+                    "UPDATE bets_placed SET market_name_fmt = ? WHERE id = ?",
+                    (mercado_fmt, bet_id)
+                )
+
             # Escolhe template baseado no EV
             ev = aposta.get('ev', 0)
             if ev >= THRESHOLD_EV_ALTO:
@@ -120,10 +129,10 @@ class AlertSender:
     def _montar_aviso_mesmo_jogo(self, alertas_anteriores: list[dict]) -> str:
         if not alertas_anteriores:
             return ""
-        from src.utils.formatadores import formatar_odd, formatar_market_name
+        from src.utils.formatadores import formatar_odd
         linhas = ["⚠️ <b>Já foi enviado alerta deste jogo:</b>"]
         for a in alertas_anteriores:
-            mercado = formatar_market_name(a.get('market_type', ''), aposta=a)
+            mercado = a.get('market_name_fmt') or a.get('market_type', '')
             odd = formatar_odd(a.get('odd_alerta', 0))
             apostou = " ✅ Apostado" if a.get('valor_apostado') else ""
             linhas.append(f"  • {mercado} — Odd {odd}{apostou}")
@@ -658,6 +667,15 @@ async def enviar_alerta_instantaneo(chat_id, evento: Dict[str, Any], stake: floa
             "commence_time": evento.get('commence_time', ''),
         }
         bet_id = get_alert_sender()._bets_tracker.registrar_alerta(alert_hash, chat_id_str, FEED_ID, dados_alerta)
+
+        # Salvar nome do mercado formatado
+        from src.utils.formatadores import formatar_market_name
+        mercado_fmt = formatar_market_name(evento.get('market_type', ''), aposta=evento)
+        with get_alert_sender()._bets_tracker.db.get_connection() as conn:
+            conn.execute(
+                "UPDATE bets_placed SET market_name_fmt = ? WHERE id = ?",
+                (mercado_fmt, bet_id)
+            )
 
         # Formata o alerta com template destacado
         mensagem = await get_alert_sender()._formatar_alerta_destacado(evento, stake, aviso=aviso)

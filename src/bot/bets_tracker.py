@@ -414,7 +414,7 @@ class BetsTracker:
         with self.db.get_connection() as conn:
             rows = conn.execute("""
                 SELECT id, market_type, bet_side, odd_alerta, odd_apostada,
-                       ev_alerta, status, valor_apostado, timestamp_alerta
+                       ev_alerta, status, valor_apostado, timestamp_alerta, market_name_fmt
                 FROM bets_placed
                 WHERE chat_id = ?
                   AND home = ?
