@@ -3071,7 +3071,7 @@ async def bet_no_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         texto_original = query.message.text_html or query.message.text or ""
         await query.edit_message_text(
-            text=texto_original + "\n\n❌ Pulado",
+            text=texto_original + "\n\n❌ Pulei — sem aposta registrada",
             parse_mode='HTML',
             disable_web_page_preview=True,
         )
@@ -3273,7 +3273,7 @@ async def bet_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
 
-        await update.message.reply_text(f"✅ Cashout de R$ {valor:.2f} registrado!", parse_mode='HTML')
+        await update.message.reply_text(f"💸 Cashout registrado — R$ {valor:.2f}", parse_mode='HTML')
         return
 
 
