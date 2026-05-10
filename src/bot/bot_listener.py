@@ -3279,6 +3279,8 @@ async def bet_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ===== COMANDOS DE CONSULTA — BET TRACKING =====
 
 async def banca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
     chat_id = str(update.effective_chat.id)
 
     # Com args: /banca 30 2 → configura bankroll
@@ -3377,6 +3379,8 @@ async def banca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /reset — apaga todas as apostas e banca do usuário."""
+    if not update.message:
+        return
     chat_id = str(update.effective_chat.id)
 
     # Confirmação obrigatória: /reset CONFIRMAR
@@ -3432,6 +3436,8 @@ def _montar_keyboard_resultado(bet_id: int):
 
 async def pendentes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /pendentes — apostas aguardando resultado."""
+    if not update.message:
+        return
     chat_id = str(update.effective_chat.id)
     pendentes = bets_tracker.get_pendentes(chat_id)
 
@@ -3449,6 +3455,8 @@ async def pendentes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def historico_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /historico — últimas apostas finalizadas."""
+    if not update.message:
+        return
     chat_id = str(update.effective_chat.id)
     historico = bets_tracker.get_historico(chat_id)
 
