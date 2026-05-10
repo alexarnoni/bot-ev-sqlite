@@ -55,7 +55,15 @@ class AlertSender:
             chat_id_int = int(chat_id) if isinstance(chat_id, str) else chat_id
             chat_id_str = str(chat_id)
 
-            # Registra alerta no tracker e obtém bet_id
+            # Buscar alertas anteriores do mesmo jogo
+            alertas_anteriores = self._bets_tracker.buscar_alertas_mesmo_jogo(
+                chat_id_str,
+                aposta.get('home', ''),
+                aposta.get('away', ''),
+                aposta.get('commence_time', ''),
+            )
+            aviso = self._montar_aviso_mesmo_jogo(alertas_anteriores)
+
             alert_hash = gerar_alert_hash(
                 chat_id_str,
                 aposta.get('home', ''),
@@ -82,9 +90,9 @@ class AlertSender:
             # Escolhe template baseado no EV
             ev = aposta.get('ev', 0)
             if ev >= THRESHOLD_EV_ALTO:
-                mensagem = await self._formatar_alerta_destacado(aposta)
+                mensagem = await self._formatar_alerta_destacado(aposta, aviso=aviso)
             else:
-                mensagem = await self._formatar_alerta_normal(aposta)
+                mensagem = await self._formatar_alerta_normal(aposta, aviso=aviso)
 
             # Monta keyboard com bet_id
             keyboard = self._montar_keyboard(bet_id)
@@ -109,7 +117,19 @@ class AlertSender:
         except Exception as e:
             logger.error(f"❌ Erro inesperado ao enviar alerta: {e}")
 
-    async def _formatar_alerta_destacado(self, aposta: Dict[str, Any], stake: float = None) -> str:
+    def _montar_aviso_mesmo_jogo(self, alertas_anteriores: list[dict]) -> str:
+        if not alertas_anteriores:
+            return ""
+        from src.utils.formatadores import formatar_odd, formatar_market_name
+        linhas = ["⚠️ <b>Já foi enviado alerta deste jogo:</b>"]
+        for a in alertas_anteriores:
+            mercado = formatar_market_name(a.get('market_type', ''), aposta=a)
+            odd = formatar_odd(a.get('odd_alerta', 0))
+            apostou = " ✅ Apostado" if a.get('valor_apostado') else ""
+            linhas.append(f"  • {mercado} — Odd {odd}{apostou}")
+        return "\n".join(linhas)
+
+    async def _formatar_alerta_destacado(self, aposta: Dict[str, Any], stake: float = None, aviso: str = "") -> str:
         """
         Template destacado para ev >= THRESHOLD_EV_ALTO.
         Inicia com: '🚨🚨 ALERTA EV ALTO 🚨🚨'
@@ -160,7 +180,9 @@ class AlertSender:
                 link_formatado = f"🔗 Abrir na {bookmaker_fmt} (link não disponível)"
             
             # MENSAGEM PADRONIZADA — TEMPLATE DESTACADO
-            mensagem = f"""🚨🚨 <b>ALERTA EV ALTO</b> 🚨🚨
+            aviso_bloco = f"\n{aviso}\n" if aviso else ""
+
+            mensagem = f"""🚨🚨 <b>ALERTA EV ALTO</b> 🚨🚨{aviso_bloco}
 
 {emoji_esporte} <b>{home} vs {away}</b>
 {bandeira_pais} <b>{league}</b>
@@ -179,7 +201,7 @@ class AlertSender:
             logger.error(f"Erro ao formatar alerta destacado: {e}")
             return f"🚨 Erro na formatação do alerta: {e}"
 
-    async def _formatar_alerta_normal(self, aposta: Dict[str, Any]) -> str:
+    async def _formatar_alerta_normal(self, aposta: Dict[str, Any], aviso: str = "") -> str:
         """
         Template normal para ev < THRESHOLD_EV_ALTO.
         Inicia com: '🟢 Alerta EV+'
@@ -230,7 +252,9 @@ class AlertSender:
             else:
                 link_formatado = f"🔗 Abrir na {bookmaker_fmt} (link não disponível)"
             
-            mensagem = f"""🟢 <b>Alerta EV+</b>
+            aviso_bloco = f"\n{aviso}\n" if aviso else ""
+
+            mensagem = f"""🟢 <b>Alerta EV+</b>{aviso_bloco}
 
 {emoji_esporte} <b>{home} vs {away}</b>
 {bandeira_pais} <b>{league}</b>
@@ -602,6 +626,15 @@ async def enviar_alerta_instantaneo(chat_id, evento: Dict[str, Any], stake: floa
         chat_id_int = int(chat_id) if isinstance(chat_id, str) else chat_id
         chat_id_str = str(chat_id)
 
+        # Buscar alertas anteriores do mesmo jogo
+        alertas_anteriores = get_alert_sender()._bets_tracker.buscar_alertas_mesmo_jogo(
+            chat_id_str,
+            evento.get('home', ''),
+            evento.get('away', ''),
+            evento.get('commence_time', ''),
+        )
+        aviso = get_alert_sender()._montar_aviso_mesmo_jogo(alertas_anteriores)
+
         # Registra alerta no tracker e obtém bet_id
         alert_hash = gerar_alert_hash(
             chat_id_str,
@@ -627,7 +660,7 @@ async def enviar_alerta_instantaneo(chat_id, evento: Dict[str, Any], stake: floa
         bet_id = get_alert_sender()._bets_tracker.registrar_alerta(alert_hash, chat_id_str, FEED_ID, dados_alerta)
 
         # Formata o alerta com template destacado
-        mensagem = await get_alert_sender()._formatar_alerta_destacado(evento, stake)
+        mensagem = await get_alert_sender()._formatar_alerta_destacado(evento, stake, aviso=aviso)
 
         # Monta keyboard com bet_id
         keyboard = get_alert_sender()._montar_keyboard(bet_id)

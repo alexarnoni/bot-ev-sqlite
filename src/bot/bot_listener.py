@@ -2975,6 +2975,27 @@ def _validar_valor(texto: str) -> float | None:
     return valor
 
 
+def _parsear_valor_e_odd(texto: str) -> tuple[float, float | None] | None:
+    """
+    Aceita '50' ou '50 1.47' ou '50 1,47'.
+    Retorna (valor, odd) onde odd pode ser None.
+    Retorna None se inválido.
+    """
+    partes = texto.strip().split()
+    if len(partes) == 1:
+        valor = _validar_valor(partes[0])
+        return (valor, None) if valor else None
+    if len(partes) == 2:
+        valor = _validar_valor(partes[0])
+        odd = _validar_valor(partes[1])
+        if valor is None or odd is None:
+            return None
+        if odd < 1.01:
+            return None
+        return valor, odd
+    return None
+
+
 def _validar_odd(texto: str) -> float | None:
     """Valida odd: deve ser float >= 1.01. Aceita vírgula como decimal."""
     try:
@@ -3185,22 +3206,20 @@ async def bet_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bet_id_aposta = context.user_data.get('esperando_valor_aposta')
     if bet_id_aposta:
         texto = update.message.text.strip()
-        valor, odd_apostada = _parse_valor_odd(texto)
-        if valor is None:
+        resultado = _parsear_valor_e_odd(texto)
+        if resultado is None:
             await update.message.reply_text(
-                "❌ Valor inválido. Envie valor e odd (ex: 50 2.15) ou apenas valor (ex: 50):",
+                "❌ Formato inválido. Envie o valor (ex: 50) ou valor e odd (ex: 50 1.47):",
                 parse_mode='HTML',
             )
             return
 
-        bets_tracker.marcar_apostou(bet_id_aposta, valor, odd_apostada)
+        valor, odd_apostada = resultado
+        bets_tracker.marcar_apostou(bet_id_aposta, valor, odd_apostada=odd_apostada)
         context.user_data.pop('esperando_valor_aposta', None)
 
         # Monta texto de confirmação
-        if odd_apostada is not None:
-            confirmacao = f"💰 R$ {valor:.2f} @ {odd_apostada}"
-        else:
-            confirmacao = f"💰 R$ {valor:.2f}"
+        confirmacao = f"💰 R$ {valor:.2f} @ {odd_apostada}" if odd_apostada else f"💰 R$ {valor:.2f}"
 
         # Edita a mensagem original adicionando confirmação
         msg_original = context.user_data.pop('_bet_message', None)
@@ -3260,26 +3279,49 @@ async def bet_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ===== COMANDOS DE CONSULTA — BET TRACKING =====
 
 async def banca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /banca — resumo de ROI."""
     chat_id = str(update.effective_chat.id)
-    dias = 30
-    if context.args:
-        try:
-            dias = int(context.args[0])
-        except (ValueError, IndexError):
-            pass
 
-    resumo = bets_tracker.get_resumo(chat_id, dias)
+    # Com args: /banca 30 2 → configura bankroll
+    if context.args:
+        partes = context.args
+        if len(partes) == 2:
+            try:
+                bankroll = float(partes[0].replace(',', '.'))
+                valor_unidade = float(partes[1].replace(',', '.'))
+                if bankroll <= 0 or valor_unidade <= 0:
+                    raise ValueError
+            except ValueError:
+                await update.message.reply_text(
+                    "❌ Formato inválido. Use: /banca <bankroll> <valor_unidade>\nEx: /banca 30 2",
+                    parse_mode='HTML',
+                )
+                return
+            bets_tracker.configurar_bankroll(chat_id, bankroll, valor_unidade)
+            await update.message.reply_text(
+                f"✅ Banca configurada!\n💰 Bankroll: R$ {bankroll:.2f}\n🎯 1u = R$ {valor_unidade:.2f}",
+                parse_mode='HTML',
+            )
+            return
+        else:
+            await update.message.reply_text(
+                "❌ Formato inválido. Use: /banca <bankroll> <valor_unidade>\nEx: /banca 30 2",
+                parse_mode='HTML',
+            )
+            return
+
+    # Sem args: mostra resumo
+    resumo = bets_tracker.get_resumo(chat_id, dias=30)
+    bankroll_cfg = bets_tracker.get_bankroll(chat_id)
 
     if resumo["total_apostas"] == 0:
-        await update.message.reply_text(
-            f"📊 Nenhuma aposta finalizada nos últimos {dias} dias.",
-            parse_mode='HTML',
-        )
+        msg = "📊 Nenhuma aposta finalizada nos últimos 30 dias."
+        if not bankroll_cfg:
+            msg += "\n\n💡 Configure sua banca com: /banca <bankroll> <valor_unidade>\nEx: /banca 30 2"
+        await update.message.reply_text(msg, parse_mode='HTML')
         return
 
     msg = (
-        f"📊 <b>Resumo dos últimos {dias} dias</b>\n\n"
+        f"📊 <b>Resumo dos últimos 30 dias</b>\n\n"
         f"🎯 Total de apostas: {resumo['total_apostas']}\n"
         f"🟢 Ganhou: {resumo['ganhou']}\n"
         f"🔴 Perdeu: {resumo['perdeu']}\n"
@@ -3290,7 +3332,32 @@ async def banca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 ROI: {resumo['roi_pct']:+.1f}%\n"
         f"📉 EV médio: {resumo['ev_medio']*100:.1f}%"
     )
+    if bankroll_cfg:
+        banca_atual = bankroll_cfg['bankroll'] + resumo['lucro_total']
+        msg += (
+            f"\n\n💼 <b>Banca</b>\n"
+            f"Inicial: R$ {bankroll_cfg['bankroll']:.2f} | "
+            f"1u = R$ {bankroll_cfg['valor_unidade']:.2f}\n"
+            f"Atual: R$ {banca_atual:.2f}"
+        )
     await update.message.reply_text(msg, parse_mode='HTML')
+
+
+async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /reset — apaga todas as apostas e banca do usuário."""
+    chat_id = str(update.effective_chat.id)
+
+    # Confirmação obrigatória: /reset CONFIRMAR
+    if not context.args or context.args[0] != "CONFIRMAR":
+        await update.message.reply_text(
+            "⚠️ Isso vai apagar todas as apostas e configuração de banca.\n"
+            "Para confirmar, envie: /reset CONFIRMAR",
+            parse_mode='HTML',
+        )
+        return
+
+    bets_tracker.resetar_banca(chat_id)
+    await update.message.reply_text("✅ Banca e histórico resetados.", parse_mode='HTML')
 
 
 def _formatar_lembrete(aposta: dict) -> str:
@@ -3300,7 +3367,7 @@ def _formatar_lembrete(aposta: dict) -> str:
     away = aposta.get('away', '')
     league = aposta.get('league', '')
     market = aposta.get('market_type', '')
-    odd = aposta.get('odd_alerta', 0)
+    odd = aposta.get('odd_apostada') or aposta.get('odd_alerta', 0)
     valor = aposta.get('valor_apostado', 0)
     ct = aposta.get('commence_time_ajustado') or aposta.get('commence_time', '')
     data_fmt = formatar_data_brasileira(ct) if ct else "N/A"
@@ -3364,9 +3431,10 @@ async def historico_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📜 <b>Últimas apostas finalizadas:</b>\n\n"
     for ap in historico:
         emoji = status_emoji.get(ap.get('status', ''), '❓')
+        odd_exibir = ap.get('odd_apostada') or ap.get('odd_alerta', 0)
         msg += (
             f"{emoji} {ap.get('home', '')} vs {ap.get('away', '')}\n"
-            f"   Odd: {ap.get('odd_alerta', 0):.2f} | R$ {ap.get('valor_apostado', 0):.2f}"
+            f"   Odd: {odd_exibir:.2f} | R$ {ap.get('valor_apostado', 0):.2f}"
             f" | Lucro: R$ {ap.get('lucro', 0):+.2f}\n\n"
         )
 
@@ -3404,6 +3472,7 @@ def get_app():
 
     # Comandos de bet tracking
     _app.add_handler(CommandHandler("banca", banca_command))
+    _app.add_handler(CommandHandler("reset", reset_command))
     _app.add_handler(CommandHandler("pendentes", pendentes_command))
     _app.add_handler(CommandHandler("historico", historico_command))
 

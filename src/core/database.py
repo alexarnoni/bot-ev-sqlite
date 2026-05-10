@@ -290,6 +290,16 @@ class Database:
             except Exception:
                 pass  # Coluna já existe
 
+            # 14. Tabela user_bankroll (gestão de banca por usuário)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_bankroll (
+                    chat_id       TEXT PRIMARY KEY,
+                    bankroll      REAL NOT NULL,
+                    valor_unidade REAL NOT NULL,
+                    timestamp     TEXT
+                )
+            """)
+
             # Índices para bets_placed
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_bets_chat

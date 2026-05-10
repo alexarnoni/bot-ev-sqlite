@@ -406,6 +406,23 @@ class BetsTracker:
             """, (chat_id,)).fetchall()
             return [dict(r) for r in rows]
 
+    def buscar_alertas_mesmo_jogo(self, chat_id: str, home: str, away: str, commence_time: str) -> list[dict]:
+        """
+        Retorna alertas anteriores para o mesmo jogo (match por chat_id + home + away + commence_time[:16]).
+        """
+        ct_prefix = commence_time[:16] if commence_time else ""
+        with self.db.get_connection() as conn:
+            rows = conn.execute("""
+                SELECT id, market_type, bet_side, odd_alerta, odd_apostada,
+                       ev_alerta, status, valor_apostado, timestamp_alerta
+                FROM bets_placed
+                WHERE chat_id = ?
+                  AND home = ?
+                  AND away = ?
+                  AND substr(commence_time, 1, 16) = ?
+            """, (chat_id, home, away, ct_prefix)).fetchall()
+            return [dict(r) for r in rows] if rows else []
+
     def get_historico(self, chat_id: str, limit: int = 20) -> list[dict]:
         """
         Retorna últimas apostas finalizadas ordenadas por timestamp_resultado DESC.
@@ -419,3 +436,30 @@ class BetsTracker:
                 LIMIT ?
             """, (chat_id, limit)).fetchall()
             return [dict(r) for r in rows]
+
+    def configurar_bankroll(self, chat_id: str, bankroll: float, valor_unidade: float) -> None:
+        """Salva ou atualiza bankroll e valor_unidade do usuário."""
+        with self.db.get_connection() as conn:
+            conn.execute("""
+                INSERT INTO user_bankroll (chat_id, bankroll, valor_unidade, timestamp)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                    bankroll = excluded.bankroll,
+                    valor_unidade = excluded.valor_unidade,
+                    timestamp = excluded.timestamp
+            """, (chat_id, bankroll, valor_unidade, now_utc_str()))
+
+    def get_bankroll(self, chat_id: str) -> dict | None:
+        """Retorna bankroll e valor_unidade ou None se não configurado."""
+        with self.db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT bankroll, valor_unidade FROM user_bankroll WHERE chat_id = ?",
+                (chat_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def resetar_banca(self, chat_id: str) -> None:
+        """Apaga todas as apostas e configuração de bankroll do usuário."""
+        with self.db.get_connection() as conn:
+            conn.execute("DELETE FROM bets_placed WHERE chat_id = ?", (chat_id,))
+            conn.execute("DELETE FROM user_bankroll WHERE chat_id = ?", (chat_id,))
