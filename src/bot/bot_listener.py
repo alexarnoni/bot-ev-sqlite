@@ -2,7 +2,7 @@ import os
 import logging
 import html
 from pathlib import Path
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -3311,17 +3311,34 @@ async def banca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Sem args: mostra resumo
     resumo = bets_tracker.get_resumo(chat_id, dias=30)
+    historico_total = bets_tracker.get_resumo(chat_id, dias=3650)
     bankroll_cfg = bets_tracker.get_bankroll(chat_id)
+
+    # Calcular período
+    data_fim = datetime.now(timezone.utc)
+    data_inicio = data_fim - timedelta(days=30)
+    periodo = f"{data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
 
     if resumo["total_apostas"] == 0:
         msg = "📊 Nenhuma aposta finalizada nos últimos 30 dias."
+        if historico_total["total_apostas"] > 0:
+            msg += (
+                f"\n\n📊 <b>Histórico completo:</b> {historico_total['total_apostas']} apostas"
+                f" | Lucro: R$ {historico_total['lucro_total']:+.2f}"
+                f" | ROI: {historico_total['roi_pct']:+.1f}%"
+            )
         if not bankroll_cfg:
-            msg += "\n\n💡 Configure sua banca com: /banca <bankroll> <valor_unidade>\nEx: /banca 30 2"
+            msg += (
+                "\n\n💡 Banca não configurada. Para configurar: "
+                "/banca <valor depositado> <valor da unidade>\n"
+                "Exemplo: /banca 100 10"
+            )
         await update.message.reply_text(msg, parse_mode='HTML')
         return
 
     msg = (
-        f"📊 <b>Resumo dos últimos 30 dias</b>\n\n"
+        f"📊 <b>Resumo dos últimos 30 dias</b>\n"
+        f"📅 {periodo}\n\n"
         f"🎯 Total de apostas: {resumo['total_apostas']}\n"
         f"🟢 Ganhou: {resumo['ganhou']}\n"
         f"🔴 Perdeu: {resumo['perdeu']}\n"
@@ -3332,14 +3349,31 @@ async def banca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 ROI: {resumo['roi_pct']:+.1f}%\n"
         f"📉 EV médio: {resumo['ev_medio']*100:.1f}%"
     )
+
+    # Histórico completo
+    if historico_total["total_apostas"] > resumo["total_apostas"]:
+        msg += (
+            f"\n\n📊 <b>Histórico completo:</b> {historico_total['total_apostas']} apostas"
+            f" | Lucro: R$ {historico_total['lucro_total']:+.2f}"
+            f" | ROI: {historico_total['roi_pct']:+.1f}%"
+        )
+
+    # Banca
     if bankroll_cfg:
-        banca_atual = bankroll_cfg['bankroll'] + resumo['lucro_total']
+        banca_atual = bankroll_cfg['bankroll'] + historico_total['lucro_total']
         msg += (
             f"\n\n💼 <b>Banca</b>\n"
-            f"Inicial: R$ {bankroll_cfg['bankroll']:.2f} | "
+            f"Depositado: R$ {bankroll_cfg['bankroll']:.2f} | "
             f"1u = R$ {bankroll_cfg['valor_unidade']:.2f}\n"
-            f"Atual: R$ {banca_atual:.2f}"
+            f"Banca atual: R$ {banca_atual:.2f}"
         )
+    else:
+        msg += (
+            "\n\n💡 Banca não configurada. Para configurar: "
+            "/banca <valor depositado> <valor da unidade>\n"
+            "Exemplo: /banca 100 10"
+        )
+
     await update.message.reply_text(msg, parse_mode='HTML')
 
 
