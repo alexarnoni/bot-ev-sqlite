@@ -2996,6 +2996,38 @@ def _parsear_valor_e_odd(texto: str) -> tuple[float, float | None] | None:
     return None
 
 
+def _validar_unidades(texto: str) -> float | None:
+    """Valida stake em unidades. Aceita inteiro ou decimal (vírgula ou ponto).
+    Ex: '2', '1.5', '0,5'. Retorna None se inválido ou <= 0."""
+    texto = texto.strip().replace(",", ".")
+    try:
+        unidades = float(texto)
+    except (ValueError, TypeError):
+        return None
+    if unidades <= 0:
+        return None
+    return unidades
+
+
+def _parsear_unidades_e_odd(texto: str) -> tuple[float, float | None] | None:
+    """
+    Aceita '2' ou '2 1.85' ou '1.5 2,10'.
+    Retorna (stake_unidades, odd) onde odd pode ser None.
+    Retorna None se inválido.
+    """
+    partes = texto.strip().split()
+    if len(partes) == 1:
+        stake = _validar_unidades(partes[0])
+        return (stake, None) if stake else None
+    if len(partes) == 2:
+        stake = _validar_unidades(partes[0])
+        odd = _validar_odd(partes[1])
+        if stake is None or odd is None:
+            return None
+        return stake, odd
+    return None
+
+
 def _validar_odd(texto: str) -> float | None:
     """Valida odd: deve ser float >= 1.01. Aceita vírgula como decimal."""
     try:
@@ -3037,11 +3069,20 @@ async def bet_yes_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("Esta aposta já foi registrada", show_alert=True)
         return
 
+    # Exige banca configurada antes de aceitar aposta
+    chat_id = str(query.message.chat_id)
+    if not bets_tracker.get_bankroll(chat_id):
+        await query.answer(
+            "Configure sua banca primeiro: /banca 100 10",
+            show_alert=True,
+        )
+        return
+
     # Edita mensagem removendo botões e adicionando texto de espera
     try:
         texto_original = query.message.text_html or query.message.text or ""
         await query.edit_message_text(
-            text=texto_original + "\n\n⏳ Valor apostado e odd (ex: 50 2.15):",
+            text=texto_original + "\n\n⏳ Stake em unidades (ex: 2 1.85):",
             parse_mode='HTML',
             disable_web_page_preview=True,
         )
@@ -3202,33 +3243,51 @@ async def bet_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Handler de texto para capturar valor de aposta ou cashout.
     Deve ser chamado ANTES do capturar_input_manual existente.
     """
-    # Fluxo: esperando valor de aposta
+    # Fluxo: esperando stake de aposta (em unidades)
     bet_id_aposta = context.user_data.get('esperando_valor_aposta')
     if bet_id_aposta:
         texto = update.message.text.strip()
-        resultado = _parsear_valor_e_odd(texto)
+        resultado = _parsear_unidades_e_odd(texto)
         if resultado is None:
             await update.message.reply_text(
-                "❌ Formato inválido. Envie o valor (ex: 50) ou valor e odd (ex: 50 1.47):",
+                "❌ Formato inválido. Envie a stake em unidades (ex: 2) "
+                "ou unidades e odd (ex: 2 1.47):",
                 parse_mode='HTML',
             )
             return
 
-        valor, odd_apostada = resultado
-        bets_tracker.marcar_apostou(bet_id_aposta, valor, odd_apostada=odd_apostada)
+        stake_unidades, odd_apostada = resultado
+
+        # Resolve valor da unidade a partir da banca configurada
+        chat_id = str(update.effective_chat.id)
+        bankroll_cfg = bets_tracker.get_bankroll(chat_id)
+        if not bankroll_cfg:
+            await update.message.reply_text(
+                "❌ Banca não configurada. Configure com /banca 100 10 e tente de novo.",
+                parse_mode='HTML',
+            )
+            context.user_data.pop('esperando_valor_aposta', None)
+            context.user_data.pop('_bet_message', None)
+            return
+
+        valor_unidade = bankroll_cfg['valor_unidade']
+        valor_reais = stake_unidades * valor_unidade
+
+        bets_tracker.marcar_apostou(
+            bet_id_aposta, stake_unidades, valor_unidade, odd_apostada=odd_apostada
+        )
         context.user_data.pop('esperando_valor_aposta', None)
 
         # Monta texto de confirmação (sempre exibe odd — fallback para odd_alerta)
         odd_exibir = odd_apostada or bets_tracker.get_odd_alerta(bet_id_aposta)
-        confirmacao = f"💰 R$ {valor:.2f} @ {odd_exibir:.2f}"
+        confirmacao = f"💰 {stake_unidades:g}u ≡ R$ {valor_reais:.2f} @ {odd_exibir:.2f}"
 
         # Edita a mensagem original adicionando confirmação
         msg_original = context.user_data.pop('_bet_message', None)
         if msg_original:
             try:
                 texto_original = msg_original.text_html or msg_original.text or ""
-                # Remove "⏳ Valor apostado e odd (ex: 50 2.15):" e adiciona confirmação
-                texto_limpo = texto_original.replace("\n\n⏳ Valor apostado e odd (ex: 50 2.15):", "")
+                texto_limpo = texto_original.replace("\n\n⏳ Stake em unidades (ex: 2 1.85):", "")
                 await msg_original.edit_text(
                     text=texto_limpo + f"\n\n{confirmacao}",
                     parse_mode='HTML',
@@ -3237,7 +3296,10 @@ async def bet_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
 
-        await update.message.reply_text(f"✅ Aposta registrada — R$ {valor:.2f} @ {odd_exibir:.2f}", parse_mode='HTML')
+        await update.message.reply_text(
+            f"✅ Aposta registrada — {stake_unidades:g}u ≡ R$ {valor_reais:.2f} @ {odd_exibir:.2f}",
+            parse_mode='HTML',
+        )
         return
 
     # Fluxo: esperando valor de cashout

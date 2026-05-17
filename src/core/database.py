@@ -259,6 +259,7 @@ class Database:
                     commence_time             TEXT,
                     commence_time_ajustado    TEXT    DEFAULT NULL,
                     valor_apostado            REAL    DEFAULT NULL,
+                    stake_unidades            REAL    DEFAULT NULL,
                     status                    TEXT    DEFAULT 'pendente'
                                                       CHECK(status IN (
                                                           'pendente','ganhou','perdeu',
@@ -294,6 +295,11 @@ class Database:
                 conn.execute("ALTER TABLE bets_placed ADD COLUMN market_name_fmt TEXT DEFAULT NULL")
             except Exception:
                 pass
+
+            try:
+                conn.execute("ALTER TABLE bets_placed ADD COLUMN stake_unidades REAL DEFAULT NULL")
+            except Exception:
+                pass  # Coluna já existe
 
             # 14. Tabela user_bankroll (gestão de banca por usuário)
             conn.execute("""

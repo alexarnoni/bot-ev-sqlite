@@ -169,15 +169,25 @@ class BetsTracker:
             return row['status'] if row else None
 
     # --- Atualização de status ---
-    def marcar_apostou(self, bet_id: int, valor: float, odd_apostada: float | None = None) -> None:
+    def marcar_apostou(
+        self,
+        bet_id: int,
+        stake_unidades: float,
+        valor_unidade: float,
+        odd_apostada: float | None = None,
+    ) -> None:
         """
-        UPDATE valor_apostado, odd_apostada e timestamp_apostou.
+        Registra a aposta a partir de stake em unidades.
+        Grava stake_unidades (entrada do usuário) e valor_apostado em reais
+        (= stake_unidades * valor_unidade, congelado no momento da aposta).
         Se odd_apostada for None, copia odd_alerta do registro.
         Levanta StatusFinalError se a aposta já tem status final.
         """
         status = self.get_bet_status(bet_id)
         if status in STATUSES_FINAIS:
             raise StatusFinalError(f"Aposta {bet_id} já tem status final: {status}")
+
+        valor_apostado = stake_unidades * valor_unidade
 
         with self.db.get_connection() as conn:
             if odd_apostada is None:
@@ -189,9 +199,10 @@ class BetsTracker:
 
             conn.execute("""
                 UPDATE bets_placed
-                SET valor_apostado = ?, odd_apostada = ?, timestamp_apostou = ?
+                SET valor_apostado = ?, stake_unidades = ?, odd_apostada = ?,
+                    timestamp_apostou = ?
                 WHERE id = ?
-            """, (valor, odd_apostada, now_utc_str(), bet_id))
+            """, (valor_apostado, stake_unidades, odd_apostada, now_utc_str(), bet_id))
 
     def marcar_pulei(self, bet_id: int) -> None:
         """

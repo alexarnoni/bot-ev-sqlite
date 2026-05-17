@@ -273,7 +273,7 @@ class TestProperty5ResetApagaDados:
                 f"2030-01-{(i+1):02d} 20:00:00"
             )
             bet_id = tracker.registrar_alerta(alert_hash, chat_id, "feed1", dados)
-            tracker.marcar_apostou(bet_id, 50.0)
+            tracker.marcar_apostou(bet_id, 5.0, 10.0)
 
         # Configure bankroll
         tracker.configurar_bankroll(chat_id, bankroll, valor_unidade)
@@ -338,7 +338,7 @@ class TestProperty2PersistenciaOddApostada:
             "999", "TeamA", "TeamB", "h2h", "home", "Bet365", "2025-06-15 20:00:00"
         )
         bet_id = tracker.registrar_alerta(alert_hash, "999", "feed1", dados)
-        tracker.marcar_apostou(bet_id, valor, odd_apostada=odd_apostada)
+        tracker.marcar_apostou(bet_id, valor, 1.0, odd_apostada=odd_apostada)
 
         # Read back from DB
         with database.get_connection() as conn:
@@ -405,7 +405,7 @@ class TestProperty3CalculoLucroOddCorreta:
             "888", "TeamA", "TeamB", "h2h", "home", "Bet365", "2025-06-15 20:00:00"
         )
         bet_id = tracker.registrar_alerta(alert_hash, "888", "feed1", dados)
-        tracker.marcar_apostou(bet_id, valor, odd_apostada=odd_apostada)
+        tracker.marcar_apostou(bet_id, valor, 1.0, odd_apostada=odd_apostada)
         tracker.marcar_resultado(bet_id, status)
 
         # Determine expected odd
