@@ -70,9 +70,12 @@ def gerar_alert_hash(
     bet_side: str,
     bookmaker: str,
     commence_time: str,
+    point: str = "",
 ) -> str:
     """SHA-256 truncado em 32 chars dos campos canônicos do alerta."""
     raw = f"{chat_id}|{home}|{away}|{market_type}|{bet_side}|{bookmaker}|{commence_time}"
+    if point:
+        raw += f"|{point}"
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 

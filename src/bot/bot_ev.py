@@ -64,6 +64,7 @@ class AlertSender:
             )
             aviso = self._montar_aviso_mesmo_jogo(alertas_anteriores)
 
+            point = str(aposta.get('hdp') or aposta.get('total') or "")
             alert_hash = gerar_alert_hash(
                 chat_id_str,
                 aposta.get('home', ''),
@@ -72,6 +73,7 @@ class AlertSender:
                 aposta.get('bet_side', ''),
                 aposta.get('bookmaker', ''),
                 aposta.get('commence_time', ''),
+                point=point,
             )
             dados_alerta: DadosAlerta = {
                 "home": aposta.get('home', ''),
@@ -645,6 +647,7 @@ async def enviar_alerta_instantaneo(chat_id, evento: Dict[str, Any], stake: floa
         aviso = get_alert_sender()._montar_aviso_mesmo_jogo(alertas_anteriores)
 
         # Registra alerta no tracker e obtém bet_id
+        point = str(evento.get('hdp') or evento.get('total') or "")
         alert_hash = gerar_alert_hash(
             chat_id_str,
             evento.get('home', ''),
@@ -653,6 +656,7 @@ async def enviar_alerta_instantaneo(chat_id, evento: Dict[str, Any], stake: floa
             evento.get('bet_side', ''),
             evento.get('bookmaker', ''),
             evento.get('commence_time', ''),
+            point=point,
         )
         dados_alerta: DadosAlerta = {
             "home": evento.get('home', ''),
