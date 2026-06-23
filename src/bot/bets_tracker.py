@@ -480,6 +480,55 @@ class BetsTracker:
             ).fetchone()
             return row['odd_alerta'] if row and row['odd_alerta'] else 0.0
 
+    def get_resumo_por_faixa_ev(self, chat_id: str) -> list[dict]:
+        """
+        Retorna ROI por faixa de EV (histórico completo, sem limite de dias).
+        Faixas: 5-8%, 8-12%, >12%.
+        Considera apenas status finalizados: ganhou, perdeu, empate, cashout.
+        Ignora apostas com ev_alerta NULL.
+        Retorna lista de dicts: [{'faixa': str, 'apostas': int, 'lucro': float, 'total_apostado': float, 'roi_pct': float}]
+        Ordenada pela faixa (5-8% primeiro).
+        Faixas sem apostas são omitidas.
+        """
+        with self.db.get_connection() as conn:
+            rows = conn.execute("""
+                SELECT
+                    CASE
+                        WHEN ev_alerta >= 0.05 AND ev_alerta < 0.08 THEN '5-8%'
+                        WHEN ev_alerta >= 0.08 AND ev_alerta < 0.12 THEN '8-12%'
+                        WHEN ev_alerta >= 0.12 THEN '>12%'
+                    END AS faixa,
+                    COUNT(*) AS apostas,
+                    COALESCE(SUM(lucro), 0) AS lucro,
+                    COALESCE(SUM(valor_apostado), 0) AS total_apostado
+                FROM bets_placed
+                WHERE chat_id = ?
+                  AND status IN ('ganhou', 'perdeu', 'empate', 'cashout')
+                  AND ev_alerta IS NOT NULL
+                  AND ev_alerta >= 0.05
+                GROUP BY faixa
+            """, (chat_id,)).fetchall()
+
+        ordem = ['5-8%', '8-12%', '>12%']
+        resultado = []
+        for row in rows:
+            faixa = row['faixa']
+            if faixa is None:
+                continue
+            total_apostado = row['total_apostado']
+            lucro = row['lucro']
+            roi_pct = (lucro / total_apostado * 100) if total_apostado > 0 else 0.0
+            resultado.append({
+                'faixa': faixa,
+                'apostas': row['apostas'],
+                'lucro': lucro,
+                'total_apostado': total_apostado,
+                'roi_pct': roi_pct,
+            })
+
+        resultado.sort(key=lambda x: ordem.index(x['faixa']) if x['faixa'] in ordem else 99)
+        return resultado
+
     def resetar_banca(self, chat_id: str) -> None:
         """Apaga todas as apostas e configuração de bankroll do usuário."""
         with self.db.get_connection() as conn:

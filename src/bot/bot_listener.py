@@ -3437,6 +3437,14 @@ async def banca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Onde 100 é o valor depositado e 10 é o valor de 1 unidade."
         )
 
+    # ROI por faixa de EV
+    faixas = bets_tracker.get_resumo_por_faixa_ev(chat_id)
+    if faixas:
+        msg += "\n\n📊 <b>ROI por faixa de EV</b>"
+        for f in faixas:
+            roi_str = f"{f['roi_pct']:+.1f}%"
+            msg += f"\n   {f['faixa']:7s} <code>{roi_str}</code> ({f['apostas']} apostas)"
+
     await update.message.reply_text(msg, parse_mode='HTML')
 
 
