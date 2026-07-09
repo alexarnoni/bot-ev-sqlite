@@ -3425,12 +3425,22 @@ async def banca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Banca
     if bankroll_cfg:
         banca_atual = bankroll_cfg['bankroll'] + historico_total['lucro_total']
+        total_pendente = bets_tracker.get_total_pendente(chat_id)
+        bankroll = bankroll_cfg['bankroll']
+        valor_unidade = bankroll_cfg['valor_unidade']
         msg += (
             f"\n\n💼 <b>Banca</b>\n"
-            f"Depositado: R$ {bankroll_cfg['bankroll']:.2f} | "
-            f"1u = R$ {bankroll_cfg['valor_unidade']:.2f}\n"
-            f"Banca atual: R$ {banca_atual:.2f}"
+            f"Depositado: R$ {bankroll:.2f} | "
+            f"1u = R$ {valor_unidade:.2f}\n"
         )
+        if total_pendente > 0:
+            msg += (
+                f"Em jogo (pendentes): R$ {total_pendente:.2f}\n"
+                f"Banca disponível: R$ {banca_atual - total_pendente:.2f}\n"
+                f"Banca total (c/ pendentes): R$ {banca_atual:.2f}"
+            )
+        else:
+            msg += f"Banca atual: R$ {banca_atual:.2f}"
     else:
         msg += (
             "\n\n💡 Banca não configurada. Para configurar: /banca 100 10\n"

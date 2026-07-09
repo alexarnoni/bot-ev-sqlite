@@ -437,6 +437,22 @@ class BetsTracker:
             """, (chat_id, home, away, ct_prefix)).fetchall()
             return [dict(r) for r in rows] if rows else []
 
+    def get_total_pendente(self, chat_id: str) -> float:
+        """
+        Retorna a soma de valor_apostado de todas as apostas com status='pendente'
+        para o chat_id. Ignora valor_apostado NULL (apostas ainda não confirmadas
+        pelo usuário, que não têm valor definido).
+        """
+        with self.db.get_connection() as conn:
+            row = conn.execute("""
+                SELECT COALESCE(SUM(valor_apostado), 0) AS total
+                FROM bets_placed
+                WHERE chat_id = ?
+                  AND status = 'pendente'
+                  AND valor_apostado IS NOT NULL
+            """, (chat_id,)).fetchone()
+            return float(row['total']) if row else 0.0
+
     def get_historico(self, chat_id: str, limit: int = 20) -> list[dict]:
         """
         Retorna últimas apostas finalizadas ordenadas por timestamp_resultado DESC.
