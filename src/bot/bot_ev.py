@@ -12,7 +12,7 @@ from src.core.config import get_telegram_token, THRESHOLD_EV_ALTO, FEED_ID
 from src.bot.bets_tracker import BetsTracker, gerar_alert_hash, DadosAlerta
 from src.core.database import get_db
 from src.core.database import SQLiteConnectionPool, SQLiteConnectionConfig
-from src.bot.bot_core import definir_stake
+from src.bot.bot_core import definir_stake, calcular_odd_minima
 from src.utils.formatadores import formatar_ev, formatar_odd, formatar_stake
 import os
 
@@ -36,6 +36,30 @@ class AlertSender:
         self.bot = Bot(token=self.bot_token)
         self.db_pool = db_pool
         self._bets_tracker = BetsTracker(get_db())
+
+    def _get_ev_minimo(self, chat_id: str) -> float:
+        """Retorna ev_faixa_min do usuário buscando direto do banco. Default 0.05."""
+        try:
+            db = get_db()
+            user = db.get_user_complete(int(chat_id))
+            if user:
+                return float(user.get("ev_faixa_min") or 0.05)
+        except Exception:
+            pass
+        return 0.05
+
+    def _calcular_odd_minima(self, aposta: Dict[str, Any], chat_id: str) -> "float | None":
+        """
+        Calcula odd mínima para manter o EV mínimo do usuário.
+        Retorna None em caso de dados inválidos (não quebra o alerta).
+        """
+        odd_alerta = aposta.get('bet365_odds', 0)
+        ev_alerta = aposta.get('ev', 0)
+        if odd_alerta <= 0 or (1 + ev_alerta) <= 0:
+            return None
+        prob_real = (1 + ev_alerta) / odd_alerta
+        ev_minimo = self._get_ev_minimo(chat_id)
+        return calcular_odd_minima(ev_minimo, prob_real)
 
     def _montar_keyboard(self, bet_id: int) -> InlineKeyboardMarkup:
         """Retorna InlineKeyboardMarkup com botões Apostei/Pulei."""
@@ -101,9 +125,9 @@ class AlertSender:
             # Escolhe template baseado no EV
             ev = aposta.get('ev', 0)
             if ev >= THRESHOLD_EV_ALTO:
-                mensagem = await self._formatar_alerta_destacado(aposta, aviso=aviso)
+                mensagem = await self._formatar_alerta_destacado(aposta, aviso=aviso, chat_id=chat_id_str)
             else:
-                mensagem = await self._formatar_alerta_normal(aposta, aviso=aviso)
+                mensagem = await self._formatar_alerta_normal(aposta, aviso=aviso, chat_id=chat_id_str)
 
             # Monta keyboard com bet_id
             keyboard = self._montar_keyboard(bet_id)
@@ -140,7 +164,7 @@ class AlertSender:
             linhas.append(f"  • {mercado} — Odd {odd}{apostou}")
         return "\n".join(linhas)
 
-    async def _formatar_alerta_destacado(self, aposta: Dict[str, Any], stake: float = None, aviso: str = "") -> str:
+    async def _formatar_alerta_destacado(self, aposta: Dict[str, Any], stake: float = None, aviso: str = "", chat_id: str = "") -> str:
         """
         Template destacado para ev >= THRESHOLD_EV_ALTO.
         Inicia com: '🚨🚨 ALERTA EV ALTO 🚨🚨'
@@ -181,6 +205,14 @@ class AlertSender:
             emoji_esporte = self._get_emoji_esporte(sport)
             bandeira_pais = self._get_bandeira_pais(league, aposta)
             
+            # Calcula odd mínima
+            odd_minima = self._calcular_odd_minima(aposta, chat_id) if chat_id else None
+            ev_minimo_chat = self._get_ev_minimo(chat_id) if chat_id else 0.05
+            odd_minima_linha = (
+                f"\n<b>📉 Odd mínima (EV {ev_minimo_chat*100:.0f}%+):</b> {odd_minima:.2f}"
+                if odd_minima is not None else ""
+            )
+
             # Monta a mensagem com layout melhorado
             link_evento = aposta.get('bet_url') or aposta.get('event_url') 
             
@@ -198,7 +230,7 @@ class AlertSender:
 {emoji_esporte} <b>{home} vs {away}</b>
 {bandeira_pais} <b>{league}</b>
 <b>📌 Mercado:</b> {mercado_fmt}
-<b>🔢 Odd {bookmaker_fmt}:</b> {odds_fmt}
+<b>🔢 Odd {bookmaker_fmt}:</b> {odds_fmt}{odd_minima_linha}
 <b>📈 Valor Esperado (EV):</b> ⭐ {ev_pct}
 <b>🎯 Stake:</b> {stake_fmt}
 <b>🗓️ Data do Jogo:</b> {data_completa}
@@ -212,7 +244,7 @@ class AlertSender:
             logger.error(f"Erro ao formatar alerta destacado: {e}")
             return f"🚨 Erro na formatação do alerta: {e}"
 
-    async def _formatar_alerta_normal(self, aposta: Dict[str, Any], aviso: str = "") -> str:
+    async def _formatar_alerta_normal(self, aposta: Dict[str, Any], aviso: str = "", chat_id: str = "") -> str:
         """
         Template normal para ev < THRESHOLD_EV_ALTO.
         Inicia com: '🟢 Alerta EV+'
@@ -253,7 +285,15 @@ class AlertSender:
             # Emojis baseados no esporte e país
             emoji_esporte = self._get_emoji_esporte(sport)
             bandeira_pais = self._get_bandeira_pais(league, aposta)
-            
+
+            # Calcula odd mínima
+            odd_minima = self._calcular_odd_minima(aposta, chat_id) if chat_id else None
+            ev_minimo_chat = self._get_ev_minimo(chat_id) if chat_id else 0.05
+            odd_minima_linha = (
+                f"\n<b>📉 Odd mínima (EV {ev_minimo_chat*100:.0f}%+):</b> {odd_minima:.2f}"
+                if odd_minima is not None else ""
+            )
+
             # Monta a mensagem com layout melhorado
             link_evento = aposta.get('bet_url') or aposta.get('event_url') 
             
@@ -270,7 +310,7 @@ class AlertSender:
 {emoji_esporte} <b>{home} vs {away}</b>
 {bandeira_pais} <b>{league}</b>
 <b>📌 Mercado:</b> {mercado_fmt}
-<b>🔢 Odd {bookmaker_fmt}:</b> {odds_fmt}
+<b>🔢 Odd {bookmaker_fmt}:</b> {odds_fmt}{odd_minima_linha}
 <b>📈 Valor Esperado (EV):</b> {ev_pct}
 <b>🎯 Stake:</b> {stake_fmt}
 <b>🗓️ Data do Jogo:</b> {data_completa}
@@ -682,7 +722,7 @@ async def enviar_alerta_instantaneo(chat_id, evento: Dict[str, Any], stake: floa
             )
 
         # Formata o alerta com template destacado
-        mensagem = await get_alert_sender()._formatar_alerta_destacado(evento, stake, aviso=aviso)
+        mensagem = await get_alert_sender()._formatar_alerta_destacado(evento, stake, aviso=aviso, chat_id=chat_id_str)
 
         # Monta keyboard com bet_id
         keyboard = get_alert_sender()._montar_keyboard(bet_id)
