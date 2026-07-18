@@ -98,6 +98,7 @@ class AlertSender:
                 aposta.get('bookmaker', ''),
                 aposta.get('commence_time', ''),
                 point=point,
+                odd_alerta=aposta.get('bet365_odds', 0),
             )
             dados_alerta: DadosAlerta = {
                 "home": aposta.get('home', ''),
@@ -697,6 +698,7 @@ async def enviar_alerta_instantaneo(chat_id, evento: Dict[str, Any], stake: floa
             evento.get('bookmaker', ''),
             evento.get('commence_time', ''),
             point=point,
+            odd_alerta=evento.get('bet365_odds', 0),
         )
         dados_alerta: DadosAlerta = {
             "home": evento.get('home', ''),
