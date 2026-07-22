@@ -71,3 +71,7 @@ backup_*/
 
 # Hypothesis cache
 .hypothesis/
+
+# Bug condition tests (intentionally failing, not tracked)
+tests/test_fix_bookmakers.py
+tests/test_fix_confirmacao_odd.py
