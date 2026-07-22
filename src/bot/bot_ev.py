@@ -481,62 +481,128 @@ class AlertSender:
     
     def _detectar_pais_por_liga(self, league_lower: str) -> str:
         """
-        Detecta país baseado em padrões comuns no nome da liga
+        Detecta país a partir do formato "Country - League Name" da API.
+
+        Estratégia:
+        1. Verifica se a string contém " - ". Se sim, extrai o prefixo (país)
+           e faz match EXATO (case-insensitive) contra o mapa de países.
+        2. Para ligas sem " - " (ou prefixo não reconhecido), faz substring
+           search apenas contra competições internacionais conhecidas.
+        3. Fallback: 🏆
         """
-        # Padrões mais comuns primeiro (mais específicos)
-        padroes = [
-            # Competições internacionais - Emojis específicos
-            ('champions league', '🏆'), ('europa league', '🏆'), ('uefa', '🏆'),
-            ('copa libertadores', '🏆'), ('copa sudamericana', '🏆'),
-            ('world cup', '🌍'), ('copa do mundo', '🌍'), ('fifa', '🌍'),
-            ('euro', '🏆'), ('european championship', '🏆'),
-            ('copa america', '🏆'), ('copa áfrica', '🏆'),
-            ('asian cup', '🏆'), ('gold cup', '🏆'),
-            ('conmebol', '🏆'), ('concacaf', '🏆'),
-            ('afc', '🏆'), ('caf', '🏆'), ('ofc', '🏆'),
-            
-            # Competições continentais específicas
+
+        # --- Mapa país → bandeira (chaves em minúsculas para match exato) ---
+        PAIS_BANDEIRA: dict[str, str] = {
+            'brazil': '🇧🇷', 'brasil': '🇧🇷',
+            'england': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+            'spain': '🇪🇸', 'espanha': '🇪🇸',
+            'germany': '🇩🇪', 'alemanha': '🇩🇪',
+            'italy': '🇮🇹', 'itália': '🇮🇹', 'italia': '🇮🇹',
+            'france': '🇫🇷', 'frança': '🇫🇷',
+            'netherlands': '🇳🇱', 'holanda': '🇳🇱',
+            'portugal': '🇵🇹',
+            'argentina': '🇦🇷',
+            'mexico': '🇲🇽', 'méxico': '🇲🇽',
+            'usa': '🇺🇸', 'united states': '🇺🇸',
+            'russia': '🇷🇺',
+            'turkey': '🇹🇷',
+            'greece': '🇬🇷',
+            'belgium': '🇧🇪',
+            'switzerland': '🇨🇭',
+            'austria': '🇦🇹',
+            'poland': '🇵🇱',
+            'croatia': '🇭🇷',
+            'serbia': '🇷🇸',
+            'romania': '🇷🇴',
+            'bulgaria': '🇧🇬',
+            'hungary': '🇭🇺',
+            'norway': '🇳🇴',
+            'sweden': '🇸🇪',
+            'denmark': '🇩🇰',
+            'finland': '🇫🇮',
+            'japan': '🇯🇵',
+            'china': '🇨🇳',
+            'australia': '🇦🇺',
+            'canada': '🇨🇦',
+            'puerto rico': '🇵🇷',
+            'colombia': '🇨🇴',
+            'chile': '🇨🇱',
+            'peru': '🇵🇪',
+            'uruguay': '🇺🇾',
+            'ecuador': '🇪🇨',
+            'venezuela': '🇻🇪',
+            'bolivia': '🇧🇴',
+            'paraguay': '🇵🇾',
+            'scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+            'wales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿',
+            'ireland': '🇮🇪',
+            'ukraine': '🇺🇦',
+            'czech republic': '🇨🇿',
+            'slovakia': '🇸🇰',
+            'slovenia': '🇸🇮',
+            'israel': '🇮🇱',
+            'south korea': '🇰🇷',
+            'korea': '🇰🇷',
+            'india': '🇮🇳',
+            'saudi arabia': '🇸🇦',
+            'iran': '🇮🇷',
+            'morocco': '🇲🇦',
+            'egypt': '🇪🇬',
+            'south africa': '🇿🇦',
+            'nigeria': '🇳🇬',
+        }
+
+        # --- Competições internacionais: substring no texto completo ---
+        INTERNACIONAIS: list[tuple[str, str]] = [
+            ('champions league', '🏆'),
+            ('europa league', '🏆'),
             ('conference league', '🏆'),
-            ('copa do brasil', '🏆🇧🇷'), ('copa del rey', '🏆🇪🇸'),
-            ('fa cup', '🏆🏴󠁧󠁢󠁥󠁮󠁧󠁿'), ('coppa italia', '🏆🇮🇹'),
-            ('dfb pokal', '🏆🇩🇪'), ('coupe de france', '🏆🇫🇷'),
-            ('taça de portugal', '🏆🇵🇹'), ('knvb beker', '🏆🇳🇱'),
-            
-            # Competições de clubes mundiais
-            ('club world cup', '🌍'), ('mundial de clubes', '🌍'),
-            ('supercopa', '🏆'), ('super cup', '🏆'),
-            ('recopa', '🏆'), ('intercontinental', '🌍'),
-            
-            # Países principais
-            ('brazil', '🇧🇷'), ('brasil', '🇧🇷'), ('brasileirão', '🇧🇷'),
-            ('england', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'), ('premier league', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'),
-            ('spain', '🇪🇸'), ('la liga', '🇪🇸'), ('espanha', '🇪🇸'),
-            ('germany', '🇩🇪'), ('bundesliga', '🇩🇪'), ('alemanha', '🇩🇪'),
-            ('italy', '🇮🇹'), ('serie a', '🇮🇹'), ('itália', '🇮🇹'),
-            ('france', '🇫🇷'), ('ligue 1', '🇫🇷'), ('frança', '🇫🇷'),
-            ('netherlands', '🇳🇱'), ('eredivisie', '🇳🇱'), ('holanda', '🇳🇱'),
-            ('portugal', '🇵🇹'), ('primeira liga', '🇵🇹'),
-            ('argentina', '🇦🇷'), ('primera división', '🇦🇷'),
-            ('mexico', '🇲🇽'), ('méxico', '🇲🇽'), ('liga mx', '🇲🇽'),
-            ('usa', '🇺🇸'), ('united states', '🇺🇸'), ('mls', '🇺🇸'),
-            
-            # Outros países
-            ('russia', '🇷🇺'), ('turkey', '🇹🇷'), ('greece', '🇬🇷'),
-            ('belgium', '🇧🇪'), ('switzerland', '🇨🇭'), ('austria', '🇦🇹'),
-            ('poland', '🇵🇱'), ('croatia', '🇭🇷'), ('serbia', '🇷🇸'),
-            ('romania', '🇷🇴'), ('bulgaria', '🇧🇬'), ('hungary', '🇭🇺'),
-            ('norway', '🇳🇴'), ('sweden', '🇸🇪'), ('denmark', '🇩🇰'),
-            ('finland', '🇫🇮'), ('japan', '🇯🇵'), ('china', '🇨🇳'),
-            ('australia', '🇦🇺'), ('canada', '🇨🇦'), ('puerto rico', '🇵🇷'),
-            ('colombia', '🇨🇴'), ('chile', '🇨🇱'), ('peru', '🇵🇪'),
-            ('uruguay', '🇺🇾'), ('ecuador', '🇪🇨'), ('venezuela', '🇻🇪'),
-            ('bolivia', '🇧🇴'), ('paraguay', '🇵🇾')
+            ('uefa', '🏆'),
+            ('copa libertadores', '🏆'),
+            ('copa sudamericana', '🏆'),
+            ('conmebol', '🏆'),
+            ('concacaf', '🏆'),
+            ('world cup', '🌍'),
+            ('copa do mundo', '🌍'),
+            ('fifa', '🌍'),
+            ('club world cup', '🌍'),
+            ('mundial de clubes', '🌍'),
+            ('intercontinental', '🌍'),
+            ('european championship', '🏆'),
+            ('copa america', '🏆'),
+            ('copa áfrica', '🏆'),
+            ('asian cup', '🏆'),
+            ('gold cup', '🏆'),
+            ('afc', '🏆'),
+            ('caf', '🏆'),
+            ('ofc', '🏆'),
+            ('euro ', '🏆'),          # espaço evita match em "euroliga" etc.
+            ('supercopa', '🏆'),
+            ('super cup', '🏆'),
+            ('recopa', '🏆'),
+            # Copas nacionais sem prefixo de país no nome
+            ('copa do brasil', '🏆🇧🇷'),
+            ('copa del rey', '🏆🇪🇸'),
+            ('fa cup', '🏆🏴󠁧󠁢󠁥󠁮󠁧󠁿'),
+            ('coppa italia', '🏆🇮🇹'),
+            ('dfb pokal', '🏆🇩🇪'),
+            ('coupe de france', '🏆🇫🇷'),
+            ('taça de portugal', '🏆🇵🇹'),
+            ('knvb beker', '🏆🇳🇱'),
         ]
-        
-        for padrao, bandeira in padroes:
-            if padrao in league_lower:
+
+        # 1. Tenta extrair prefixo de país "Country - League Name"
+        if ' - ' in league_lower:
+            prefix = league_lower.split(' - ', 1)[0].strip()
+            bandeira = PAIS_BANDEIRA.get(prefix)
+            if bandeira:
                 return bandeira
-        
+
+        # 2. Substring search apenas para competições internacionais
+        for termo, bandeira in INTERNACIONAIS:
+            if termo in league_lower:
+                return bandeira
+
         return '🏆'
     
     def _detectar_pais_por_dados_api(self, aposta: Dict[str, Any]) -> str:
