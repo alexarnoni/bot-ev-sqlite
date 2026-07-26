@@ -171,6 +171,7 @@ class GlobalScanner:
                     usuarios_configurados = [
                         user for user in users 
                         if feed_db.usuario_configurado(user['chat_id'])
+                        and not feed_db.is_user_blocked(user['chat_id'])
                     ]
                     
                     # Adiciona feed_id ao usuário para identificação
