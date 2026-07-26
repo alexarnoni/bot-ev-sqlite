@@ -6,7 +6,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, TypeHandler, filters
+from telegram.ext import ApplicationHandlerStop
 
 from src.api.api_client import OddsAPI
 from src.filters.bookmaker_config import usuario_configurado
@@ -103,6 +104,21 @@ def _count_api_cache_entries() -> int:
 def is_admin(chat_id):
     """Verifica se o usuário é admin"""
     return str(chat_id) == ADMIN_CHAT_ID
+
+async def verificar_acesso(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Trava global de acesso: bloqueia qualquer update de chats fora de ADMIN_USERS."""
+    chat = update.effective_chat
+    if chat is None:
+        raise ApplicationHandlerStop
+    if chat.id not in ADMIN_USERS:
+        try:
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text="🔒 Este bot é de uso privado.",
+            )
+        except Exception:
+            pass
+        raise ApplicationHandlerStop
 
 # ----- Migração de banco legado (bot.sqlite3) para schema normalizado -----
 def migrar_banco_legado_se_preciso():
@@ -3602,6 +3618,9 @@ def get_app():
 
     token = get_telegram_token()
     _app = ApplicationBuilder().token(token).build()
+
+    # Trava global de acesso — executada antes de todos os outros handlers
+    _app.add_handler(TypeHandler(Update, verificar_acesso), group=-1)
 
     # Comandos principais
     _app.add_handler(CommandHandler("start", start))
