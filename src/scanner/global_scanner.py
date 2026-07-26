@@ -1,6 +1,6 @@
 """
 Scanner Global Único - Processo dedicado para scan automático
-Executa 1 scan a cada 2 minutos e salva em cache global para todos os feeds
+Executa 1 scan a cada 4 minutos e salva em cache global para todos os feeds
 """
 import asyncio
 import time
@@ -42,10 +42,10 @@ class GlobalScanner:
         """Inicia o scanner global"""
         logger.info("🌍 Iniciando Scanner Global Único...")
         
-        # JOB PRINCIPAL: SCAN GLOBAL A CADA 2 MINUTOS
+        # JOB PRINCIPAL: SCAN GLOBAL A CADA 4 MINUTOS
         self.scheduler.add_job(
             self.global_scan_job,
-            IntervalTrigger(minutes=2),  # ← SEMPRE 2 MINUTOS
+            IntervalTrigger(minutes=4),  # ← SEMPRE 4 MINUTOS
             id='global_scan',
             max_instances=1,
             replace_existing=True
@@ -67,7 +67,7 @@ class GlobalScanner:
         
         # Inicia o scheduler
         self.scheduler.start()
-        logger.info("✅ Scanner Global iniciado (scan único a cada 2min)")
+        logger.info("✅ Scanner Global iniciado (scan único a cada 4min)")
         
         # Log dos jobs ativos
         for job in self.scheduler.get_jobs():
@@ -75,7 +75,7 @@ class GlobalScanner:
     
     @measure_time('global_scan')
     async def global_scan_job(self):
-        """Job principal de scan global - executa a cada 2 minutos"""
+        """Job principal de scan global - executa a cada 4 minutos"""
         try:
             logger.info("🌍 Iniciando scan global único...")
             start_time = time.time()
