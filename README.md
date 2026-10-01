@@ -1,5 +1,7 @@
 # Bot EV+ com SQLite
 
+> Projeto encerrado. O bot não está mais em operação.
+
 Sistema de alertas de apostas esportivas com valor positivo (EV+) usando SQLite como banco de dados.
 
 ## 🚀 Características
